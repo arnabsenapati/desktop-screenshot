@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Screenshot Overlay</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="overlay-container">
+    <canvas id="screenshotCanvas"></canvas>
+    
+    <!-- Drag handle cursor overlays (for resize handles) -->
+    <div class="resize-handle top-left" data-handle="top-left"></div>
+    <div class="resize-handle top" data-handle="top"></div>
+    <div class="resize-handle top-right" data-handle="top-right"></div>
+    <div class="resize-handle right" data-handle="right"></div>
+    <div class="resize-handle bottom-right" data-handle="bottom-right"></div>
+    <div class="resize-handle bottom" data-handle="bottom"></div>
+    <div class="resize-handle bottom-left" data-handle="bottom-left"></div>
+    <div class="resize-handle left" data-handle="left"></div>
+
+    <!-- Size Badge -->
+    <div class="size-badge" id="sizeBadge">0 × 0</div>
+
+    <!-- Toolbars -->
+    <div class="toolbar drawing-toolbar" id="drawingToolbar">
+      <button class="tool-btn active" data-tool="select" title="Select / Move region">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/>
+          <path d="M13 13l6 6"/>
+        </svg>
+      </button>
+      <div class="divider"></div>
+      <button class="tool-btn" data-tool="pen" title="Pen (Freehand drawing)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 20h9"></path>
+          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+        </svg>
+      </button>
+      <button class="tool-btn" data-tool="line" title="Line">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="5" y1="19" x2="19" y2="5"></line>
+        </svg>
+      </button>
+      <button class="tool-btn" data-tool="arrow" title="Arrow">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="5" y1="19" x2="18" y2="6"></line>
+          <polyline points="12 5 19 5 19 12"></polyline>
+        </svg>
+      </button>
+      <button class="tool-btn" data-tool="rect" title="Rectangle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+        </svg>
+      </button>
+      <button class="tool-btn" data-tool="highlight" title="Highlighter">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17 3a2.82 2.82 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+        </svg>
+      </button>
+      <button class="tool-btn" data-tool="text" title="Text">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="4 7 4 4 20 4 20 7"></polyline>
+          <line x1="9" y1="20" x2="15" y2="20"></line>
+          <line x1="12" y1="4" x2="12" y2="20"></line>
+        </svg>
+      </button>
+      <div class="divider"></div>
+      <div class="color-picker-wrapper" title="Change Color">
+        <div class="color-preview" id="colorPreview"></div>
+        <div class="color-popover" id="colorPopover">
+          <div class="color-swatch" style="background-color: #ef4444;" data-color="#ef4444"></div>
+          <div class="color-swatch" style="background-color: #f97316;" data-color="#f97316"></div>
+          <div class="color-swatch" style="background-color: #eab308;" data-color="#eab308"></div>
+          <div class="color-swatch" style="background-color: #22c55e;" data-color="#22c55e"></div>
+          <div class="color-swatch" style="background-color: #06b6d4;" data-color="#06b6d4"></div>
+          <div class="color-swatch" style="background-color: #3b82f6;" data-color="#3b82f6"></div>
+          <div class="color-swatch" style="background-color: #a855f7;" data-color="#a855f7"></div>
+          <div class="color-swatch" style="background-color: #ec4899;" data-color="#ec4899"></div>
+          <div class="color-swatch" style="background-color: #ffffff;" data-color="#ffffff"></div>
+          <div class="color-swatch" style="background-color: #000000; border: 1px solid rgba(255,255,255,0.2);" data-color="#000000"></div>
+          <div class="custom-color-input-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 5v14M5 12h14"/>
+            </svg>
+            <input type="color" id="customColorInput" value="#ef4444">
+          </div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <button class="tool-btn disabled" id="undoBtn" title="Undo (Ctrl+Z)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 7v6h6"></path>
+          <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"></path>
+        </svg>
+      </button>
+    </div>
+
+    <div class="toolbar action-toolbar" id="actionToolbar">
+      <button class="action-btn" id="searchBtn" title="Search similar images on Google">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          <rect x="8" y="8" width="6" height="6" rx="1"></rect>
+        </svg>
+        <span>Search</span>
+      </button>
+      <div class="divider"></div>
+      <button class="action-btn" id="copyBtn" title="Copy to Clipboard (Ctrl+C)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+        <span>Copy</span>
+      </button>
+      <button class="action-btn" id="saveBtn" title="Save Screenshot (Ctrl+S)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+          <polyline points="17 21 17 13 7 13 7 21"></polyline>
+          <polyline points="7 3 7 8 15 8"></polyline>
+        </svg>
+        <span>Save</span>
+      </button>
+      <div class="divider"></div>
+      <button class="action-btn close-btn" id="closeBtn" title="Cancel (Esc)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+  </div>
+  
+  <script src="renderer.js"></script>
+</body>
+</html>

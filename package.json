@@ -1,0 +1,15 @@
+{
+  "name": "desktop-screenshot",
+  "version": "1.0.0",
+  "description": "A premium Lightshot-like screenshot tool with drawing and annotation tools.",
+  "main": "index.js",
+  "scripts": {
+    "start": "electron .",
+    "package": "electron-packager . desktop-screenshot --platform=win32 --arch=x64 --out=dist --overwrite --icon=src/assets/icon.ico"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^26.8.1",
+    "electron-packager": "^17.1.2"
+  }
+}
