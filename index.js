@@ -51,6 +51,14 @@ function createWidgetWindow() {
 
 async function captureScreenAndOpenOverlay() {
   try {
+    // Hide the widget window first so it's not captured in the screenshot
+    if (widgetWin && !widgetWin.isDestroyed()) {
+      widgetWin.hide();
+    }
+    
+    // Give the OS window manager a brief moment to finish hiding the window
+    await new Promise(resolve => setTimeout(resolve, 150));
+
     // Determine where the cursor is to capture that screen
     const cursorPoint = screen.getCursorScreenPoint();
     const activeDisplay = screen.getDisplayNearestPoint(cursorPoint);
@@ -99,13 +107,12 @@ async function captureScreenAndOpenOverlay() {
     
     // Open full screen overlay window on the active display
     createOverlayWindow(screenshotDataUrl, bounds);
-    
-    // Hide the widget window during capture
-    if (widgetWin && !widgetWin.isDestroyed()) {
-      widgetWin.hide();
-    }
   } catch (error) {
     console.error('Failed to capture screen:', error);
+    // Restore widget window if capture failed
+    if (widgetWin && !widgetWin.isDestroyed()) {
+      widgetWin.show();
+    }
   }
 }
 
