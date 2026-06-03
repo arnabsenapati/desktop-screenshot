@@ -558,7 +558,7 @@ canvas.addEventListener('mousedown', (e) => {
   }
 });
 
-canvas.addEventListener('mousemove', (e) => {
+window.addEventListener('mousemove', (e) => {
   const pos = getMousePos(e);
   
   if (isSelecting) {
@@ -634,7 +634,7 @@ canvas.addEventListener('mousemove', (e) => {
   }
 });
 
-canvas.addEventListener('mouseup', () => {
+window.addEventListener('mouseup', () => {
   if (isSelecting) {
     isSelecting = false;
     if (selection.w > 5 && selection.h > 5) {
