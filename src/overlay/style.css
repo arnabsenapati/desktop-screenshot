@@ -283,3 +283,115 @@ canvas {
   overflow: hidden;
   box-sizing: border-box;
 }
+
+/* Size Picker Styles */
+.size-picker-wrapper {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.size-popover {
+  position: absolute;
+  bottom: 0;
+  left: 42px; /* Open to the right */
+  background: rgba(18, 18, 24, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  padding: 12px;
+  border-radius: 8px;
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 1000;
+  width: 170px;
+}
+
+.size-presets {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+}
+
+.size-preset-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1.5px solid transparent;
+}
+
+.size-preset-dot::after {
+  content: '';
+  display: block;
+  background-color: rgba(255, 255, 255, 0.6);
+  border-radius: 50%;
+}
+
+.size-preset-dot[data-size="2.5"]::after { width: 3px; height: 3px; }
+.size-preset-dot[data-size="5"]::after { width: 6px; height: 6px; }
+.size-preset-dot[data-size="10"]::after { width: 10px; height: 10px; }
+.size-preset-dot[data-size="15"]::after { width: 14px; height: 14px; }
+.size-preset-dot[data-size="25"]::after { width: 18px; height: 18px; }
+
+.size-preset-dot:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.size-preset-dot.active {
+  border-color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.15);
+}
+
+.size-preset-dot.active::after {
+  background-color: #ffffff;
+}
+
+.size-slider-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.size-slider-container input[type="range"] {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.15);
+  outline: none;
+}
+
+.size-slider-container input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #8b5cf6;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.size-slider-container input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+#sizeValue {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  min-width: 40px;
+  text-align: right;
+}

@@ -20,6 +20,13 @@ const colorPopover = document.getElementById('colorPopover');
 const colorSwatches = document.querySelectorAll('.color-swatch');
 const customColorInput = document.getElementById('customColorInput');
 
+// Brush size elements
+const sizeBtn = document.getElementById('sizeBtn');
+const sizePopover = document.getElementById('sizePopover');
+const sizeSlider = document.getElementById('sizeSlider');
+const sizeValue = document.getElementById('sizeValue');
+const sizePresetDots = document.querySelectorAll('.size-preset-dot');
+
 // Resize handle elements
 const resizeHandles = {
   'top-left': document.querySelector('.resize-handle.top-left'),
@@ -98,13 +105,31 @@ colorPreview.addEventListener('click', (e) => {
   e.stopPropagation();
   const isOpen = colorPopover.style.display === 'grid';
   colorPopover.style.display = isOpen ? 'none' : 'grid';
+  if (!isOpen) {
+    sizePopover.style.display = 'none'; // Close size picker when color is opened
+  }
+});
+
+// Brush Size Popover Toggle
+sizeBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const isOpen = sizePopover.style.display === 'flex';
+  sizePopover.style.display = isOpen ? 'none' : 'flex';
+  if (!isOpen) {
+    colorPopover.style.display = 'none'; // Close color picker when size is opened
+  }
 });
 
 document.addEventListener('click', () => {
   colorPopover.style.display = 'none';
+  sizePopover.style.display = 'none';
 });
 
 colorPopover.addEventListener('click', (e) => {
+  e.stopPropagation();
+});
+
+sizePopover.addEventListener('click', (e) => {
   e.stopPropagation();
 });
 
@@ -123,6 +148,39 @@ customColorInput.addEventListener('change', () => {
   colorPopover.style.display = 'none';
 });
 
+// Update Brush Size Helper
+function updateBrushSize(size, updateSlider = true) {
+  currentWidth = size;
+  sizeValue.textContent = `${size}px`;
+  
+  if (updateSlider) {
+    sizeSlider.value = size;
+  }
+  
+  sizePresetDots.forEach(dot => {
+    const dotSize = parseFloat(dot.dataset.size);
+    if (Math.abs(dotSize - size) < 0.1) {
+      dot.classList.add('active');
+    } else {
+      dot.classList.remove('active');
+    }
+  });
+}
+
+// Preset dots event listeners
+sizePresetDots.forEach(dot => {
+  dot.addEventListener('click', () => {
+    const size = parseFloat(dot.dataset.size);
+    updateBrushSize(size);
+  });
+});
+
+// Slider event listeners
+sizeSlider.addEventListener('input', (e) => {
+  const size = parseFloat(e.target.value);
+  updateBrushSize(size, false);
+});
+
 // Tool Selection
 toolButtons.forEach(btn => {
   btn.addEventListener('click', () => {
@@ -136,6 +194,10 @@ toolButtons.forEach(btn => {
       currentTool = tool;
       document.querySelector('.tool-btn.active')?.classList.remove('active');
       btn.classList.add('active');
+      
+      // Close setting popovers when switching tools
+      colorPopover.style.display = 'none';
+      sizePopover.style.display = 'none';
       
       // Update cursor based on tool
       if (currentTool === 'select') {

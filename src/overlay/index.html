@@ -68,6 +68,29 @@
         </svg>
       </button>
       <div class="divider"></div>
+      <div class="size-picker-wrapper" title="Brush Size">
+        <button class="tool-btn" id="sizeBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" y1="6" x2="20" y2="6" stroke-width="1.5"></line>
+            <line x1="4" y1="12" x2="20" y2="12" stroke-width="3"></line>
+            <line x1="4" y1="18" x2="20" y2="18" stroke-width="5"></line>
+          </svg>
+        </button>
+        <div class="size-popover" id="sizePopover">
+          <div class="size-presets">
+            <div class="size-preset-dot active" data-size="2.5" title="Very Thin (2.5px)"></div>
+            <div class="size-preset-dot" data-size="5" title="Thin (5px)"></div>
+            <div class="size-preset-dot" data-size="10" title="Medium (10px)"></div>
+            <div class="size-preset-dot" data-size="15" title="Thick (15px)"></div>
+            <div class="size-preset-dot" data-size="25" title="Very Thick (25px)"></div>
+          </div>
+          <div class="size-slider-container">
+            <input type="range" id="sizeSlider" min="1" max="40" step="0.5" value="2.5">
+            <span id="sizeValue">2.5px</span>
+          </div>
+        </div>
+      </div>
+      <div class="divider"></div>
       <div class="color-picker-wrapper" title="Change Color">
         <div class="color-preview" id="colorPreview"></div>
         <div class="color-popover" id="colorPopover">
