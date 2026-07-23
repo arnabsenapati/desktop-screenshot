@@ -6,9 +6,13 @@ let startX = 0;
 let startY = 0;
 
 dragHandle.addEventListener('mousedown', (e) => {
-  isDragging = true;
-  startX = e.screenX;
-  startY = e.screenY;
+  if (window.__TAURI__) {
+    window.electronAPI.dragWidget();
+  } else {
+    isDragging = true;
+    startX = e.screenX;
+    startY = e.screenY;
+  }
   
   // Prevent default text selection behavior
   e.preventDefault();

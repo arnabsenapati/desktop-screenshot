@@ -4,6 +4,7 @@ const fs = require('fs');
 
 let widgetWin = null;
 let overlayWin = null;
+const isInstantMode = process.argv.includes('--instant') || process.argv.includes('--capture');
 
 function createWidgetWindow() {
   const primaryDisplay = screen.getPrimaryDisplay();
@@ -112,6 +113,9 @@ async function captureScreenAndOpenOverlay() {
     // Restore widget window if capture failed
     if (widgetWin && !widgetWin.isDestroyed()) {
       widgetWin.show();
+    } else if (isInstantMode) {
+      dialog.showErrorBox('Capture Error', 'Failed to capture screen: ' + error.message);
+      app.quit();
     }
   }
 }
@@ -157,7 +161,9 @@ function createOverlayWindow(dataUrl, bounds) {
   overlayWin.on('closed', () => {
     overlayWin = null;
     // Restore widget window when overlay closes
-    if (widgetWin && !widgetWin.isDestroyed()) {
+    if (isInstantMode) {
+      app.quit();
+    } else if (widgetWin && !widgetWin.isDestroyed()) {
       widgetWin.show();
     }
   });
@@ -257,23 +263,27 @@ ipcMain.handle('search-image', async (event, dataUrl) => {
 
 // App Lifecycle
 app.whenReady().then(() => {
-  createWidgetWindow();
-  
-  // Register PrintScreen global shortcut
-  globalShortcut.register('PrintScreen', () => {
+  if (isInstantMode) {
     captureScreenAndOpenOverlay();
-  });
-  
-  // Register alternative shortcut: Ctrl+Shift+S
-  globalShortcut.register('CommandOrControl+Shift+S', () => {
-    captureScreenAndOpenOverlay();
-  });
-  
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWidgetWindow();
-    }
-  });
+  } else {
+    createWidgetWindow();
+    
+    // Register PrintScreen global shortcut
+    globalShortcut.register('PrintScreen', () => {
+      captureScreenAndOpenOverlay();
+    });
+    
+    // Register alternative shortcut: Ctrl+Shift+S
+    globalShortcut.register('CommandOrControl+Shift+S', () => {
+      captureScreenAndOpenOverlay();
+    });
+    
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWidgetWindow();
+      }
+    });
+  }
 });
 
 app.on('will-quit', () => {

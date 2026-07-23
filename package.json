@@ -4,12 +4,17 @@
   "description": "A premium Lightshot-like screenshot tool with drawing and annotation tools.",
   "main": "index.js",
   "scripts": {
-    "start": "electron .",
-    "package": "electron-packager . desktop-screenshot --platform=win32 --arch=x64 --out=dist --overwrite --icon=src/assets/icon.ico"
+    "start": "tauri dev",
+    "build": "tauri build",
+    "tauri": "tauri"
   },
   "devDependencies": {
     "electron": "^31.0.0",
     "electron-builder": "^26.8.1",
     "electron-packager": "^17.1.2"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/cli": "^2.11.4"
   }
 }
