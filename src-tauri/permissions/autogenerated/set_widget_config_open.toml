@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-widget-config-open"
+description = "Enables the set_widget_config_open command without any pre-configured scope."
+commands.allow = ["set_widget_config_open"]
+
+[[permission]]
+identifier = "deny-set-widget-config-open"
+description = "Denies the set_widget_config_open command without any pre-configured scope."
+commands.deny = ["set_widget_config_open"]

@@ -1,13 +1,19 @@
 fn main() {
-    tauri_build::try_build(
-        tauri_build::Attributes::new()
-            .app_manifest(tauri_build::AppManifest::new().commands(&[
-                "start_capture",
-                "close_overlay",
-                "save_screenshot",
-                "copy_screenshot",
-                "search_image",
-            ])),
-    )
+    // Keep this list aligned with every frontend-invokable command.
+    tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
+        tauri_build::AppManifest::new().commands(&[
+            "log_message",
+            "quit_app",
+            "start_capture",
+            "start_burst_capture",
+            "capture_region_frames",
+            "set_widget_config_open",
+            "move_widget_horizontal",
+            "close_overlay",
+            "save_screenshot",
+            "copy_screenshot",
+            "search_image",
+        ]),
+    ))
     .unwrap();
 }

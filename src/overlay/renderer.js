@@ -13,6 +13,7 @@ const searchBtn = document.getElementById('searchBtn');
 const copyBtn = document.getElementById('copyBtn');
 const saveBtn = document.getElementById('saveBtn');
 const closeBtn = document.getElementById('closeBtn');
+const captureFramesBtn = document.getElementById('captureFramesBtn');
 
 // Color picker elements
 const colorPreview = document.getElementById('colorPreview');
@@ -69,9 +70,26 @@ let antsInterval = null;
 // Text tool state
 let isEditingText = false;
 let activeTextarea = null;
+let frameCaptureSettings = null;
 
 // Initialize
 window.electronAPI.onScreenshotData((data) => {
+  frameCaptureSettings = data.mode === 'frame-selection'
+    ? { count: data.frameCount, intervalMs: data.frameIntervalMs }
+    : null;
+  document.body.classList.toggle('frame-capture-mode', frameCaptureSettings !== null);
+  if (frameCaptureSettings) {
+    captureFramesBtn.querySelector('span').textContent = `Copy ${frameCaptureSettings.count} frames`;
+    captureFramesBtn.title = `Copies the first frame immediately, then ${frameCaptureSettings.count - 1} more ${frameCaptureSettings.intervalMs} ms apart`;
+  }
+
+  selection = { x: 0, y: 0, w: 0, h: 0 };
+  hasSelection = false;
+  drawingActions = [];
+  activeShape = null;
+  stopMarchingAnts();
+  updateOverlays();
+
   logicalWidth = data.width;
   logicalHeight = data.height;
   
@@ -821,6 +839,32 @@ saveBtn.addEventListener('click', async () => {
       stopMarchingAnts();
       window.electronAPI.closeOverlay();
     }
+  }
+});
+
+captureFramesBtn.addEventListener('click', async () => {
+  if (!frameCaptureSettings || !hasSelection) return;
+
+  captureFramesBtn.classList.add('disabled');
+  captureFramesBtn.querySelector('span').textContent = 'Capturing…';
+  try {
+    await window.electronAPI.captureRegionFrames({
+      x: selection.x,
+      y: selection.y,
+      width: selection.w,
+      height: selection.h,
+      count: frameCaptureSettings.count,
+      intervalMs: frameCaptureSettings.intervalMs
+    });
+    stopMarchingAnts();
+  } catch (error) {
+    console.error('Frame capture failed:', error);
+    alert(`Frame capture failed: ${error}`);
+  } finally {
+    captureFramesBtn.classList.remove('disabled');
+    captureFramesBtn.querySelector('span').textContent = frameCaptureSettings
+      ? `Copy ${frameCaptureSettings.count} frames`
+      : 'Copy frames';
   }
 });
 

@@ -8,12 +8,123 @@ use std::fs;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use std::io::Cursor;
 
+use std::fs::OpenOptions;
+use std::io::Write;
+
+fn log_file(msg: &str) {
+    if let Ok(temp_dir) = std::env::var("TEMP") {
+        let log_path = format!("{}\\desktop_screenshot.log", temp_dir);
+        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_path) {
+            let _ = writeln!(file, "[RUST] {}", msg);
+        }
+    }
+}
+
 // Custom Commands
 
 #[tauri::command]
+fn log_message(msg: String) {
+    log_file(&format!("[JS] {}", msg));
+}
+
+#[tauri::command]
+fn quit_app() {
+    log_file("quit_app called -> terminating process");
+    std::process::exit(0);
+}
+
+#[tauri::command]
 async fn start_capture(app: AppHandle) {
-    if let Err(e) = capture_screen_and_open_overlay(app).await {
-        eprintln!("Capture failed: {}", e);
+    log_file("start_capture called");
+    if let Err(e) = capture_screen_and_open_overlay(app, None).await {
+        log_file(&format!("Capture failed: {}", e));
+    }
+}
+
+#[tauri::command]
+async fn start_burst_capture(app: AppHandle, count: u32, interval_ms: u64) {
+    let count = count.clamp(2, 60);
+    let interval_ms = interval_ms.clamp(100, 5_000);
+    log_file(&format!("start_burst_capture called: {} frames, {} ms interval", count, interval_ms));
+    if let Err(error) = capture_screen_and_open_overlay(app, Some((count, interval_ms))).await {
+        log_file(&format!("Unable to open frame selection: {}", error));
+    }
+}
+
+#[tauri::command]
+async fn capture_region_frames(
+    app: AppHandle,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    count: u32,
+    interval_ms: u64,
+) -> Result<(), String> {
+    let count = count.clamp(2, 60);
+    let interval_ms = interval_ms.clamp(100, 5_000);
+    log_file(&format!(
+        "capture_region_frames called: x={}, y={}, width={}, height={}, {} frames, {} ms interval",
+        x, y, width, height, count, interval_ms
+    ));
+
+    if let Some(overlay_win) = app.get_webview_window("overlay") {
+        overlay_win.hide().map_err(|error| error.to_string())?;
+    }
+
+    let result = capture_region_frames_to_clipboard(x, y, width, height, count, interval_ms).await;
+
+    if let Some(main_win) = app.get_webview_window("main") {
+        let _ = main_win.show();
+        let _ = main_win.set_focus();
+    }
+
+    match &result {
+        Ok(()) => {
+            let message = format!(
+                "Copied {} frames to the clipboard, {} ms apart.\n\nEach frame is a separate image for your clipboard manager.",
+                count, interval_ms
+            );
+            log_file(&message);
+            rfd::MessageDialog::new()
+                .set_title("Frames copied to clipboard")
+                .set_description(&message)
+                .set_level(rfd::MessageLevel::Info)
+                .show();
+        }
+        Err(error) => log_file(&format!("Frame capture failed: {}", error)),
+    }
+
+    result
+}
+
+#[tauri::command]
+fn set_widget_config_open(app: AppHandle, open: bool) {
+    if let Some(main_win) = app.get_webview_window("main") {
+        let height = if open { 220.0 } else { 44.0 };
+        let _ = main_win.set_size(tauri::Size::Logical(tauri::LogicalSize::new(260.0, height)));
+    }
+}
+
+#[tauri::command]
+fn move_widget_horizontal(app: AppHandle, dx: f64) {
+    log_file(&format!("move_widget_horizontal called: dx={}", dx));
+    if let Some(main_win) = app.get_webview_window("main") {
+        if let Ok(pos) = main_win.outer_position() {
+            let scale_factor = main_win.scale_factor().unwrap_or(1.0);
+            let current_x = pos.x as f64 / scale_factor;
+            let new_x = current_x + dx;
+
+            let clamped_x = if let Ok(Some(monitor)) = main_win.primary_monitor() {
+                let screen_width = monitor.size().width as f64 / scale_factor;
+                let widget_width = main_win.outer_size().map(|s| s.width as f64 / scale_factor).unwrap_or(260.0);
+                new_x.max(0.0).min(screen_width - widget_width)
+            } else {
+                new_x
+            };
+
+            let _ = main_win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(clamped_x, 0.0)));
+        }
     }
 }
 
@@ -30,6 +141,7 @@ fn close_overlay(app: AppHandle) {
         }
         if let Some(main_win) = app.get_webview_window("main") {
             let _ = main_win.show();
+            let _ = main_win.set_focus();
         }
     }
 }
@@ -142,7 +254,10 @@ async fn search_image_google(png_bytes: Vec<u8>) -> Result<String, Box<dyn std::
 
 // Capture helper
 
-async fn capture_screen_and_open_overlay(app: AppHandle) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn capture_screen_and_open_overlay(
+    app: AppHandle,
+    frame_capture: Option<(u32, u64)>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if let Some(main_win) = app.get_webview_window("main") {
         main_win.hide()?;
     }
@@ -184,14 +299,97 @@ async fn capture_screen_and_open_overlay(app: AppHandle) -> Result<(), Box<dyn s
         // Give the webview window a brief moment to process state change
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
+        let (mode, frame_count, frame_interval_ms) = match frame_capture {
+            Some((count, interval_ms)) => ("frame-selection", Some(count), Some(interval_ms)),
+            None => ("screenshot", None, None),
+        };
+
         overlay_win.emit("screenshot-data", serde_json::json!({
             "dataUrl": data_url,
             "width": width,
-            "height": height
+            "height": height,
+            "mode": mode,
+            "frameCount": frame_count,
+            "frameIntervalMs": frame_interval_ms
         }))?;
     }
 
     Ok(())
+}
+
+async fn capture_region_frames_to_clipboard(
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    count: u32,
+    interval_ms: u64,
+) -> Result<(), String> {
+    if x < 0.0 || y < 0.0 || width < 1.0 || height < 1.0 {
+        return Err("Select a non-empty screen region first.".to_string());
+    }
+
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    let (cursor_x, cursor_y) = match Mouse::get_mouse_position() {
+        Mouse::Position { x, y } => (x, y),
+        _ => (0, 0),
+    };
+    let screen = match Screen::from_point(cursor_x, cursor_y) {
+        Ok(screen) => screen,
+        Err(_) => Screen::all()
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .next()
+            .ok_or_else(|| "No display is available for frame capture.".to_string())?,
+    };
+
+    for frame_index in 0..count {
+        log_file(&format!("Capturing and copying frame {} of {}", frame_index + 1, count));
+        let image = screen.capture().map_err(|error| error.to_string())?;
+        let scale_x = image.width() as f64 / screen.display_info.width as f64;
+        let scale_y = image.height() as f64 / screen.display_info.height as f64;
+        let crop_x = (x * scale_x).round() as u32;
+        let crop_y = (y * scale_y).round() as u32;
+        let crop_width = (width * scale_x).round() as u32;
+        let crop_height = (height * scale_y).round() as u32;
+
+        if crop_width == 0
+            || crop_height == 0
+            || crop_x.saturating_add(crop_width) > image.width()
+            || crop_y.saturating_add(crop_height) > image.height()
+        {
+            return Err("The selected region is outside the captured display.".to_string());
+        }
+
+        let cropped = screenshots::image::imageops::crop_imm(
+            &image,
+            crop_x,
+            crop_y,
+            crop_width,
+            crop_height,
+        )
+        .to_image();
+
+        copy_frame_to_clipboard(cropped)?;
+
+        if frame_index + 1 < count {
+            tokio::time::sleep(std::time::Duration::from_millis(interval_ms)).await;
+        }
+    }
+
+    Ok(())
+}
+
+fn copy_frame_to_clipboard(image: screenshots::image::RgbaImage) -> Result<(), String> {
+    let (width, height) = image.dimensions();
+    let mut clipboard = Clipboard::new().map_err(|error| error.to_string())?;
+    clipboard
+        .set_image(ImageData {
+            width: width as usize,
+            height: height as usize,
+            bytes: Cow::Owned(image.into_raw()),
+        })
+        .map_err(|error| error.to_string())
 }
 
 // App Entry Point
@@ -212,7 +410,7 @@ pub fn run() {
                 if trigger {
                     let app_handle = app.clone();
                     tauri::async_runtime::spawn(async move {
-                        if let Err(e) = capture_screen_and_open_overlay(app_handle).await {
+                        if let Err(e) = capture_screen_and_open_overlay(app_handle, None).await {
                             eprintln!("Shortcut capture failed: {}", e);
                         }
                     });
@@ -225,7 +423,13 @@ pub fn run() {
         .plugin(shortcut_plugin)
         .plugin(tauri_plugin_log::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
+            log_message,
+            quit_app,
             start_capture,
+            start_burst_capture,
+            capture_region_frames,
+            set_widget_config_open,
+            move_widget_horizontal,
             close_overlay,
             save_screenshot,
             copy_screenshot,
@@ -238,7 +442,7 @@ pub fn run() {
             if is_instant_mode {
                 let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(e) = capture_screen_and_open_overlay(app_handle.clone()).await {
+                    if let Err(e) = capture_screen_and_open_overlay(app_handle.clone(), None).await {
                         eprintln!("Instant capture failed: {}", e);
                         rfd::MessageDialog::new()
                             .set_title("Capture Error")
@@ -254,11 +458,25 @@ pub fn run() {
                         let size = monitor.size();
                         let scale_factor = monitor.scale_factor();
                         let screen_width = size.width as f64 / scale_factor;
-                        let widget_width = 85.0;
-                        let x = screen_width - widget_width - 40.0;
-                        let y = 60.0;
+                        let widget_width = 210.0;
+                        let x = (screen_width - widget_width) / 2.0; // Center top
+                        let y = 0.0; // Pinned flush to top edge
                         let _ = main_win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
                     }
+
+                    // Snap y to 0 whenever window is moved natively
+                    let main_clone = main_win.clone();
+                    main_win.on_window_event(move |event| {
+                        if let tauri::WindowEvent::Moved(pos) = event {
+                            let scale_factor = main_clone.scale_factor().unwrap_or(1.0);
+                            let y_logical = pos.y as f64 / scale_factor;
+                            if y_logical.abs() > 0.5 {
+                                let x_logical = pos.x as f64 / scale_factor;
+                                let _ = main_clone.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x_logical, 0.0)));
+                            }
+                        }
+                    });
+
                     let _ = main_win.show();
                 }
 

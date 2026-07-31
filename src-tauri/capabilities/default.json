@@ -8,7 +8,13 @@
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
+    "allow-log-message",
+    "allow-quit-app",
     "allow-start-capture",
+    "allow-start-burst-capture",
+    "allow-capture-region-frames",
+    "allow-set-widget-config-open",
+    "allow-move-widget-horizontal",
     "allow-close-overlay",
     "allow-save-screenshot",
     "allow-copy-screenshot",

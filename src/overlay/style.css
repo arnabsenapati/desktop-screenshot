@@ -388,6 +388,21 @@ canvas {
   transform: scale(1.2);
 }
 
+.frame-capture-btn {
+  display: none;
+  background: linear-gradient(135deg, #ec4899, #8b5cf6);
+  color: #ffffff;
+}
+
+.frame-capture-mode .screenshot-action,
+.frame-capture-mode .drawing-toolbar {
+  display: none !important;
+}
+
+.frame-capture-mode .frame-capture-btn {
+  display: flex;
+}
+
 #sizeValue {
   font-size: 11px;
   font-weight: 600;
