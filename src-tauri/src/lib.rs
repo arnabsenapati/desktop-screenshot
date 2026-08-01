@@ -20,6 +20,28 @@ fn log_file(msg: &str) {
     }
 }
 
+const COMPACT_WIDGET_WIDTH: f64 = 118.0;
+const EXPANDED_WIDGET_WIDTH: f64 = 200.0;
+const SETTINGS_WIDGET_WIDTH: f64 = 260.0;
+const WIDGET_HEIGHT: f64 = 44.0;
+const SETTINGS_WIDGET_HEIGHT: f64 = 220.0;
+
+fn resize_widget(main_win: &tauri::WebviewWindow, width: f64, height: f64) {
+    let scale_factor = main_win.scale_factor().unwrap_or(1.0);
+    let old_width = main_win
+        .outer_size()
+        .map(|size| size.width as f64 / scale_factor)
+        .unwrap_or(width);
+    let current_x = main_win
+        .outer_position()
+        .map(|position| position.x as f64 / scale_factor)
+        .unwrap_or(0.0);
+    let centered_x = current_x + (old_width - width) / 2.0;
+
+    let _ = main_win.set_size(tauri::Size::Logical(tauri::LogicalSize::new(width, height)));
+    let _ = main_win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(centered_x, 0.0)));
+}
+
 // Custom Commands
 
 #[tauri::command]
@@ -101,8 +123,24 @@ async fn capture_region_frames(
 #[tauri::command]
 fn set_widget_config_open(app: AppHandle, open: bool) {
     if let Some(main_win) = app.get_webview_window("main") {
-        let height = if open { 220.0 } else { 44.0 };
-        let _ = main_win.set_size(tauri::Size::Logical(tauri::LogicalSize::new(260.0, height)));
+        let (width, height) = if open {
+            (SETTINGS_WIDGET_WIDTH, SETTINGS_WIDGET_HEIGHT)
+        } else {
+            (EXPANDED_WIDGET_WIDTH, WIDGET_HEIGHT)
+        };
+        resize_widget(&main_win, width, height);
+    }
+}
+
+#[tauri::command]
+fn set_widget_expanded(app: AppHandle, expanded: bool) {
+    if let Some(main_win) = app.get_webview_window("main") {
+        let width = if expanded {
+            EXPANDED_WIDGET_WIDTH
+        } else {
+            COMPACT_WIDGET_WIDTH
+        };
+        resize_widget(&main_win, width, WIDGET_HEIGHT);
     }
 }
 
@@ -429,6 +467,7 @@ pub fn run() {
             start_burst_capture,
             capture_region_frames,
             set_widget_config_open,
+            set_widget_expanded,
             move_widget_horizontal,
             close_overlay,
             save_screenshot,
@@ -458,7 +497,7 @@ pub fn run() {
                         let size = monitor.size();
                         let scale_factor = monitor.scale_factor();
                         let screen_width = size.width as f64 / scale_factor;
-                        let widget_width = 210.0;
+                        let widget_width = COMPACT_WIDGET_WIDTH;
                         let x = (screen_width - widget_width) / 2.0; // Center top
                         let y = 0.0; // Pinned flush to top edge
                         let _ = main_win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));

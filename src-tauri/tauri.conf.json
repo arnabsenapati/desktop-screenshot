@@ -13,7 +13,7 @@
         "label": "main",
         "title": "Screenshot Widget",
         "url": "widget/index.html",
-        "width": 260,
+        "width": 118,
         "height": 44,
         "resizable": false,
         "decorations": false,

@@ -14,6 +14,7 @@
     "allow-start-burst-capture",
     "allow-capture-region-frames",
     "allow-set-widget-config-open",
+    "allow-set-widget-expanded",
     "allow-move-widget-horizontal",
     "allow-close-overlay",
     "allow-save-screenshot",

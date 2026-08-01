@@ -3,6 +3,7 @@ const singleBtn = document.getElementById('singleCaptureBtn');
 const burstBtn = document.getElementById('burstCaptureBtn');
 const configBtn = document.getElementById('configBtn');
 const quitBtn = document.getElementById('quitBtn');
+const advancedControls = document.getElementById('advancedControls');
 const inlineConfig = document.getElementById('inlineConfig');
 const resetSettingsBtn = document.getElementById('resetSettingsBtn');
 const captureSummary = document.getElementById('captureSummary');
@@ -21,10 +22,13 @@ log('Widget renderer initialized');
 
 let isDragging = false;
 let startX = 0;
+let dragMoved = false;
+let advancedControlsVisible = false;
 
 // Horizontal Sliding (JS Mouse Tracking)
 dragHandle.addEventListener('mousedown', (e) => {
   isDragging = true;
+  dragMoved = false;
   startX = e.screenX;
   log(`drag start at x=${startX}`);
   e.preventDefault();
@@ -38,14 +42,19 @@ window.addEventListener('mousemove', (e) => {
   startX = e.screenX;
   
   if (dx !== 0 && window.electronAPI && window.electronAPI.moveWidgetHorizontal) {
+    dragMoved = true;
     window.electronAPI.moveWidgetHorizontal(dx);
   }
 });
 
 window.addEventListener('mouseup', () => {
   if (isDragging) {
-    log('drag end');
+    const wasClick = !dragMoved;
+    log(wasClick ? 'advanced controls toggled' : 'drag end');
     isDragging = false;
+    if (wasClick) {
+      setAdvancedControlsVisible(!advancedControlsVisible);
+    }
   }
 });
 
@@ -79,10 +88,30 @@ function updateSettingsUi() {
 }
 
 function setConfigOpen(open) {
+  if (open && !advancedControlsVisible) {
+    setAdvancedControlsVisible(true);
+  }
   inlineConfig.classList.toggle('hidden', !open);
   configBtn.classList.toggle('active', open);
   window.electronAPI?.setWidgetConfigOpen?.(open).catch((error) => {
     console.error('Unable to resize frame settings panel:', error);
+  });
+}
+
+function setAdvancedControlsVisible(visible) {
+  if (!visible && !inlineConfig.classList.contains('hidden')) {
+    inlineConfig.classList.add('hidden');
+    configBtn.classList.remove('active');
+    window.electronAPI?.setWidgetConfigOpen?.(false).catch((error) => {
+      console.error('Unable to close frame settings panel:', error);
+    });
+  }
+
+  advancedControlsVisible = visible;
+  advancedControls.classList.toggle('hidden', !visible);
+  dragHandle.classList.toggle('expanded', visible);
+  window.electronAPI?.setWidgetExpanded?.(visible).catch((error) => {
+    console.error('Unable to resize widget controls:', error);
   });
 }
 

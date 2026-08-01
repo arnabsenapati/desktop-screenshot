@@ -32,6 +32,7 @@
     startBurstCapture: ({ count, intervalMs }) => safeInvoke('start_burst_capture', { count: count || 3, intervalMs: intervalMs || 1000 }),
     captureRegionFrames: ({ x, y, width, height, count, intervalMs }) => safeInvoke('capture_region_frames', { x, y, width, height, count, intervalMs }),
     setWidgetConfigOpen: (open) => safeInvoke('set_widget_config_open', { open }),
+    setWidgetExpanded: (expanded) => safeInvoke('set_widget_expanded', { expanded }),
     closeOverlay: () => safeInvoke('close_overlay'),
     saveScreenshot: (dataUrl) => safeInvoke('save_screenshot', { dataUrl }),
     copyScreenshot: (dataUrl) => safeInvoke('copy_screenshot', { dataUrl }),

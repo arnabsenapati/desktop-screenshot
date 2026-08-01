@@ -8,6 +8,7 @@ fn main() {
             "start_burst_capture",
             "capture_region_frames",
             "set_widget_config_open",
+            "set_widget_expanded",
             "move_widget_horizontal",
             "close_overlay",
             "save_screenshot",

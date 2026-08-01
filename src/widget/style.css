@@ -50,6 +50,10 @@ body {
   color: rgba(255, 255, 255, 0.85);
 }
 
+.drag-handle.expanded {
+  color: #c4b5fd;
+}
+
 .drag-handle svg {
   width: 12px;
   height: 16px;
@@ -59,6 +63,16 @@ body {
   display: flex;
   align-items: center;
   gap: 5px;
+}
+
+.advanced-controls {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.advanced-controls.hidden {
+  display: none;
 }
 
 .divider {

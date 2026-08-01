@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-widget-expanded"
+description = "Enables the set_widget_expanded command without any pre-configured scope."
+commands.allow = ["set_widget_expanded"]
+
+[[permission]]
+identifier = "deny-set-widget-expanded"
+description = "Denies the set_widget_expanded command without any pre-configured scope."
+commands.deny = ["set_widget_expanded"]
