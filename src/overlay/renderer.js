@@ -7,6 +7,7 @@ const actionToolbar = document.getElementById('actionToolbar');
 // Tool buttons
 const toolButtons = document.querySelectorAll('.tool-btn');
 const undoBtn = document.getElementById('undoBtn');
+const clearBtn = document.getElementById('clearBtn');
 
 // Action buttons
 const searchBtn = document.getElementById('searchBtn');
@@ -27,6 +28,8 @@ const sizePopover = document.getElementById('sizePopover');
 const sizeSlider = document.getElementById('sizeSlider');
 const sizeValue = document.getElementById('sizeValue');
 const sizePresetDots = document.querySelectorAll('.size-preset-dot');
+const brushCursor = document.getElementById('brushCursor');
+const brushSizeTooltip = document.getElementById('brushSizeTooltip');
 
 // Resize handle elements
 const resizeHandles = {
@@ -43,12 +46,18 @@ const resizeHandles = {
 // Application State
 let selection = { x: 0, y: 0, w: 0, h: 0 };
 let hasSelection = false;
-let currentTool = 'select'; // select, pen, line, arrow, rect, highlight, text
+let currentTool = 'select'; // select, pen, line, arrow, rect, highlight, text, eraser
 let currentColor = '#ef4444'; // Red default
 let currentWidth = 2.5;
+let eraserWidth = 28;
+let highlightWidth = 14;
+let sizeTooltipTimeout = null;
+let lastPointerPos = { x: -100, y: -100 };
+let isMarkerMode = false;
 
 let drawingActions = []; // stack of committed shapes
 let activeShape = null; // shape in progress
+let annotationCanvas = null; // offscreen layer for clean erasing without touching screenshot
 
 let screenshotImg = new Image();
 let scaleFactor = 1;
@@ -74,25 +83,42 @@ let frameCaptureSettings = null;
 
 // Initialize
 window.electronAPI.onScreenshotData((data) => {
+  isMarkerMode = data.mode === 'marker';
   frameCaptureSettings = data.mode === 'frame-selection'
     ? { count: data.frameCount, intervalMs: data.frameIntervalMs }
     : null;
+
   document.body.classList.toggle('frame-capture-mode', frameCaptureSettings !== null);
+  document.body.classList.toggle('marker-mode', isMarkerMode);
+
   if (frameCaptureSettings) {
     captureFramesBtn.querySelector('span').textContent = `Copy ${frameCaptureSettings.count} frames`;
     captureFramesBtn.title = `Copies the first frame immediately, then ${frameCaptureSettings.count - 1} more ${frameCaptureSettings.intervalMs} ms apart`;
   }
 
-  selection = { x: 0, y: 0, w: 0, h: 0 };
-  hasSelection = false;
+  logicalWidth = data.width;
+  logicalHeight = data.height;
+
+  if (isMarkerMode) {
+    selection = { x: 0, y: 0, w: data.width, h: data.height };
+    hasSelection = true;
+    currentTool = 'pen';
+    document.querySelector('.tool-btn.active')?.classList.remove('active');
+    document.querySelector('.tool-btn[data-tool="pen"]')?.classList.add('active');
+  } else {
+    selection = { x: 0, y: 0, w: 0, h: 0 };
+    hasSelection = false;
+    currentTool = 'select';
+    document.querySelector('.tool-btn.active')?.classList.remove('active');
+    document.querySelector('.tool-btn[data-tool="select"]')?.classList.add('active');
+  }
+
   drawingActions = [];
   activeShape = null;
   stopMarchingAnts();
   updateOverlays();
+  updateBrushCursor();
 
-  logicalWidth = data.width;
-  logicalHeight = data.height;
-  
   screenshotImg.onload = () => {
     scaleFactor = screenshotImg.naturalWidth / logicalWidth;
     
@@ -116,6 +142,7 @@ function setColor(color) {
   if (activeTextarea) {
     activeTextarea.element.style.color = color;
   }
+  updateBrushCursor();
 }
 
 // Color Picker Popover Toggle
@@ -183,6 +210,7 @@ function updateBrushSize(size, updateSlider = true) {
       dot.classList.remove('active');
     }
   });
+  updateBrushCursor();
 }
 
 // Preset dots event listeners
@@ -199,30 +227,96 @@ sizeSlider.addEventListener('input', (e) => {
   updateBrushSize(size, false);
 });
 
+// Dynamic Cursor Update
+function updateBrushCursor(x, y) {
+  if (x !== undefined && y !== undefined) {
+    lastPointerPos = { x, y };
+  } else {
+    x = lastPointerPos.x;
+    y = lastPointerPos.y;
+  }
+
+  // If select or text tool is active, or cursor is offscreen, hide cursor ring
+  if (!['pen', 'eraser', 'highlight', 'line', 'arrow', 'rect'].includes(currentTool) || x < 0 || y < 0) {
+    if (brushCursor) brushCursor.classList.add('hidden');
+    canvas.style.cursor = currentTool === 'text' ? 'text' : 'crosshair';
+    return;
+  }
+
+  if (!brushCursor) return;
+
+  canvas.style.cursor = 'none';
+  brushCursor.classList.remove('hidden');
+  brushCursor.style.left = `${x}px`;
+  brushCursor.style.top = `${y}px`;
+
+  brushCursor.className = 'brush-cursor';
+
+  if (currentTool === 'eraser') {
+    brushCursor.classList.add('eraser-cursor');
+    brushCursor.style.width = `${eraserWidth}px`;
+    brushCursor.style.height = `${eraserWidth}px`;
+    brushCursor.style.backgroundColor = '';
+    brushCursor.style.borderColor = '';
+  } else if (currentTool === 'highlight') {
+    brushCursor.classList.add('highlight-cursor');
+    brushCursor.style.width = `${highlightWidth}px`;
+    brushCursor.style.height = `${highlightWidth}px`;
+    brushCursor.style.backgroundColor = currentColor;
+    brushCursor.style.borderColor = currentColor;
+  } else if (currentTool === 'pen') {
+    brushCursor.classList.add('pen-cursor');
+    const diameter = Math.max(4, currentWidth);
+    brushCursor.style.width = `${diameter}px`;
+    brushCursor.style.height = `${diameter}px`;
+    brushCursor.style.backgroundColor = currentColor;
+    brushCursor.style.borderColor = '#ffffff';
+  } else {
+    // line, arrow, rect
+    brushCursor.classList.add('shape-cursor');
+    const diameter = Math.max(6, currentWidth);
+    brushCursor.style.width = `${diameter}px`;
+    brushCursor.style.height = `${diameter}px`;
+    brushCursor.style.backgroundColor = '';
+    brushCursor.style.borderColor = currentColor;
+  }
+}
+
+function showSizeTooltip(text, x, y) {
+  if (!brushSizeTooltip) return;
+  brushSizeTooltip.textContent = text;
+  brushSizeTooltip.style.left = `${x}px`;
+  brushSizeTooltip.style.top = `${y}px`;
+  brushSizeTooltip.classList.remove('hidden');
+  
+  if (sizeTooltipTimeout) clearTimeout(sizeTooltipTimeout);
+  sizeTooltipTimeout = setTimeout(() => {
+    brushSizeTooltip.classList.add('hidden');
+  }, 850);
+}
+
+function setTool(tool) {
+  if (isEditingText) commitText();
+  if (tool) {
+    currentTool = tool;
+    document.querySelector('.tool-btn.active')?.classList.remove('active');
+    document.querySelector(`.tool-btn[data-tool="${tool}"]`)?.classList.add('active');
+    
+    // Close setting popovers when switching tools
+    colorPopover.style.display = 'none';
+    sizePopover.style.display = 'none';
+    
+    updateBrushCursor();
+  }
+}
+
 // Tool Selection
 toolButtons.forEach(btn => {
   btn.addEventListener('click', () => {
     if (btn.classList.contains('disabled')) return;
-    
-    // Commit text if we click another tool
-    if (isEditingText) commitText();
-    
     const tool = btn.dataset.tool;
     if (tool) {
-      currentTool = tool;
-      document.querySelector('.tool-btn.active')?.classList.remove('active');
-      btn.classList.add('active');
-      
-      // Close setting popovers when switching tools
-      colorPopover.style.display = 'none';
-      sizePopover.style.display = 'none';
-      
-      // Update cursor based on tool
-      if (currentTool === 'select') {
-        canvas.style.cursor = 'crosshair';
-      } else {
-        canvas.style.cursor = 'crosshair';
-      }
+      setTool(tool);
     }
   });
 });
@@ -237,7 +331,13 @@ function drawShapeOnCtx(c, shape) {
   
   switch(shape.type) {
     case 'pen':
-      if (shape.points.length < 2) return;
+      if (!shape.points || shape.points.length === 0) return;
+      if (shape.points.length === 1) {
+        c.beginPath();
+        c.arc(shape.points[0].x, shape.points[0].y, Math.max(1, shape.width / 2), 0, Math.PI * 2);
+        c.fill();
+        return;
+      }
       c.beginPath();
       c.moveTo(shape.points[0].x, shape.points[0].y);
       for(let i = 1; i < shape.points.length; i++) {
@@ -247,9 +347,16 @@ function drawShapeOnCtx(c, shape) {
       break;
       
     case 'highlight':
-      if (shape.points.length < 2) return;
+      if (!shape.points || shape.points.length === 0) return;
       c.save();
       c.globalAlpha = 0.45;
+      if (shape.points.length === 1) {
+        c.beginPath();
+        c.arc(shape.points[0].x, shape.points[0].y, 7, 0, Math.PI * 2);
+        c.fill();
+        c.restore();
+        return;
+      }
       c.lineWidth = 14;
       c.beginPath();
       c.moveTo(shape.points[0].x, shape.points[0].y);
@@ -302,6 +409,28 @@ function drawShapeOnCtx(c, shape) {
         currentY += 22;
       });
       break;
+      
+    case 'eraser':
+      if (!shape.points || shape.points.length === 0) return;
+      c.save();
+      c.globalCompositeOperation = 'destination-out';
+      c.lineWidth = shape.width || 24;
+      c.lineCap = 'round';
+      c.lineJoin = 'round';
+      if (shape.points.length === 1) {
+        c.beginPath();
+        c.arc(shape.points[0].x, shape.points[0].y, (shape.width || 24) / 2, 0, Math.PI * 2);
+        c.fill();
+      } else {
+        c.beginPath();
+        c.moveTo(shape.points[0].x, shape.points[0].y);
+        for (let i = 1; i < shape.points.length; i++) {
+          c.lineTo(shape.points[i].x, shape.points[i].y);
+        }
+        c.stroke();
+      }
+      c.restore();
+      break;
   }
 }
 
@@ -318,43 +447,62 @@ function draw() {
   }
   
   // 2. Dimmed overlay mask
-  if (hasSelection) {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
-    // Top
-    ctx.fillRect(0, 0, logicalWidth, selection.y);
-    // Bottom
-    ctx.fillRect(0, selection.y + selection.h, logicalWidth, logicalHeight - (selection.y + selection.h));
-    // Left
-    ctx.fillRect(0, selection.y, selection.x, selection.h);
-    // Right
-    ctx.fillRect(selection.x + selection.w, selection.y, logicalWidth - (selection.x + selection.w), selection.h);
-    
-    // Draw marching ants border
-    ctx.strokeStyle = '#8b5cf6';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([6, 4]);
-    ctx.lineDashOffset = dashOffset;
-    ctx.strokeRect(selection.x, selection.y, selection.w, selection.h);
-    ctx.setLineDash([]);
-  } else {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
-    ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+  if (!isMarkerMode) {
+    if (hasSelection) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+      // Top
+      ctx.fillRect(0, 0, logicalWidth, selection.y);
+      // Bottom
+      ctx.fillRect(0, selection.y + selection.h, logicalWidth, logicalHeight - (selection.y + selection.h));
+      // Left
+      ctx.fillRect(0, selection.y, selection.x, selection.h);
+      // Right
+      ctx.fillRect(selection.x + selection.w, selection.y, logicalWidth - (selection.x + selection.w), selection.h);
+      
+      // Draw marching ants border
+      ctx.strokeStyle = '#8b5cf6';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 4]);
+      ctx.lineDashOffset = dashOffset;
+      ctx.strokeRect(selection.x, selection.y, selection.w, selection.h);
+      ctx.setLineDash([]);
+    } else {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+      ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+    }
   }
   
-  // 3. Render annotations clipped to selection
-  if (hasSelection) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(selection.x, selection.y, selection.w, selection.h);
-    ctx.clip();
-    
-    drawingActions.forEach(action => drawShapeOnCtx(ctx, action));
-    
-    if (activeShape) {
-      drawShapeOnCtx(ctx, activeShape);
+  // 3. Render annotations layer (allows eraser destination-out without affecting screenshot)
+  if (hasSelection && (drawingActions.length > 0 || activeShape)) {
+    if (!annotationCanvas) {
+      annotationCanvas = document.createElement('canvas');
+    }
+    if (annotationCanvas.width !== canvas.width || annotationCanvas.height !== canvas.height) {
+      annotationCanvas.width = canvas.width;
+      annotationCanvas.height = canvas.height;
     }
     
-    ctx.restore();
+    const aCtx = annotationCanvas.getContext('2d');
+    aCtx.clearRect(0, 0, annotationCanvas.width, annotationCanvas.height);
+    aCtx.save();
+    aCtx.scale(scaleFactor, scaleFactor);
+    
+    if (!isMarkerMode) {
+      aCtx.beginPath();
+      aCtx.rect(selection.x, selection.y, selection.w, selection.h);
+      aCtx.clip();
+    }
+    
+    drawingActions.forEach(action => drawShapeOnCtx(aCtx, action));
+    
+    if (activeShape) {
+      drawShapeOnCtx(aCtx, activeShape);
+    }
+    
+    aCtx.restore();
+    
+    // Draw the annotated layer onto the main canvas
+    ctx.drawImage(annotationCanvas, 0, 0, logicalWidth, logicalHeight);
   }
   
   ctx.restore();
@@ -454,6 +602,14 @@ function cancelText() {
 
 // Layout Position of Toolbars and Handles
 function updateOverlays() {
+  if (isMarkerMode) {
+    sizeBadge.style.display = 'none';
+    drawingToolbar.style.display = 'flex';
+    actionToolbar.style.display = 'flex';
+    Object.values(resizeHandles).forEach(h => h.style.display = 'none');
+    return;
+  }
+
   if (!hasSelection) {
     sizeBadge.style.display = 'none';
     drawingToolbar.style.display = 'none';
@@ -560,19 +716,21 @@ function updateOverlays() {
 function getMousePos(e) {
   const rect = canvas.getBoundingClientRect();
   return {
-    x: e.clientX - rect.left,
-    y: e.clientY - rect.top
+    x: (e.clientX - rect.left) * (logicalWidth / (rect.width || 1)),
+    y: (e.clientY - rect.top) * (logicalHeight / (rect.height || 1))
   };
 }
 
 // Selection Helper: checks if coordinates are inside selection
 function isInsideSelection(x, y) {
+  if (isMarkerMode) return true;
   return x >= selection.x && x <= selection.x + selection.w &&
          y >= selection.y && y <= selection.y + selection.h;
 }
 
-// Mouse Event Handlers
-canvas.addEventListener('mousedown', (e) => {
+// Unified Pointer & Mouse Event Handlers
+function onPointerDown(e) {
+  if (e.button !== undefined && e.button !== 0) return;
   const pos = getMousePos(e);
   
   // If editing text, click outside commits text
@@ -581,7 +739,7 @@ canvas.addEventListener('mousedown', (e) => {
     return;
   }
   
-  if (!hasSelection) {
+  if (!hasSelection && !isMarkerMode) {
     // Start drawing a fresh selection
     isSelecting = true;
     mouseStart = pos;
@@ -594,8 +752,8 @@ canvas.addEventListener('mousedown', (e) => {
     stopMarchingAnts();
     draw();
   } else {
-    // We already have a selection
-    if (currentTool === 'select') {
+    // We already have a selection or are in marker mode
+    if (currentTool === 'select' && !isMarkerMode) {
       if (isInsideSelection(pos.x, pos.y)) {
         // Start moving selection
         isMoving = true;
@@ -614,32 +772,34 @@ canvas.addEventListener('mousedown', (e) => {
         draw();
       }
     } else {
-      // Drawing shapes inside selection
+      // Drawing shapes inside selection (or anywhere in marker mode)
       if (isInsideSelection(pos.x, pos.y)) {
         if (currentTool === 'text') {
           spawnTextInput(pos.x, pos.y);
         } else {
-          // Drawing active shape (pen, line, arrow, rect, highlight)
+          // Drawing active shape (pen, line, arrow, rect, highlight, eraser)
           activeShape = {
             type: currentTool,
             color: currentColor,
-            width: currentTool === 'highlight' ? 14 : currentWidth
+            width: currentTool === 'eraser' ? eraserWidth : (currentTool === 'highlight' ? highlightWidth : currentWidth)
           };
           
-          if (currentTool === 'pen' || currentTool === 'highlight') {
+          if (currentTool === 'pen' || currentTool === 'highlight' || currentTool === 'eraser') {
             activeShape.points = [pos];
           } else {
             activeShape.start = pos;
             activeShape.end = pos;
           }
+          draw();
         }
       }
     }
   }
-});
+}
 
-window.addEventListener('mousemove', (e) => {
+function onPointerMove(e) {
   const pos = getMousePos(e);
+  updateBrushCursor(e.clientX, e.clientY);
   
   if (isSelecting) {
     const x = Math.min(mouseStart.x, pos.x);
@@ -704,7 +864,7 @@ window.addEventListener('mousemove', (e) => {
   } else if (activeShape) {
     // We are currently drawing a shape
     if (isInsideSelection(pos.x, pos.y)) {
-      if (activeShape.type === 'pen' || activeShape.type === 'highlight') {
+      if (activeShape.type === 'pen' || activeShape.type === 'highlight' || activeShape.type === 'eraser') {
         activeShape.points.push(pos);
       } else {
         activeShape.end = pos;
@@ -712,9 +872,9 @@ window.addEventListener('mousemove', (e) => {
       draw();
     }
   }
-});
+}
 
-window.addEventListener('mouseup', () => {
+function onPointerUp() {
   if (isSelecting) {
     isSelecting = false;
     if (selection.w > 5 && selection.h > 5) {
@@ -739,6 +899,68 @@ window.addEventListener('mouseup', () => {
     updateUndoState();
     draw();
   }
+}
+
+// Bind Pointer Events (drawing tablets, stylus, touch, mouse)
+if (window.PointerEvent) {
+  canvas.addEventListener('pointerdown', (e) => {
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    onPointerDown(e);
+  });
+  window.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', (e) => {
+    try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+    onPointerUp();
+  });
+  window.addEventListener('pointercancel', onPointerUp);
+} else {
+  canvas.addEventListener('mousedown', onPointerDown);
+  window.addEventListener('mousemove', onPointerMove);
+  window.addEventListener('mouseup', onPointerUp);
+}
+
+// Mouse Wheel Size Adjustment (Pen, Eraser, Highlighter, Shapes)
+window.addEventListener('wheel', (e) => {
+  if (isEditingText || e.target.closest('.toolbar') || e.target.closest('.color-popover') || e.target.closest('.size-popover')) {
+    return;
+  }
+
+  if (['pen', 'eraser', 'highlight', 'line', 'arrow', 'rect'].includes(currentTool)) {
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? 1 : -1;
+
+    if (currentTool === 'eraser') {
+      eraserWidth = Math.max(6, Math.min(160, eraserWidth + delta * 4));
+      showSizeTooltip(`Eraser: ${Math.round(eraserWidth)}px`, e.clientX, e.clientY);
+    } else if (currentTool === 'highlight') {
+      highlightWidth = Math.max(6, Math.min(90, highlightWidth + delta * 2));
+      showSizeTooltip(`Highlighter: ${Math.round(highlightWidth)}px`, e.clientX, e.clientY);
+    } else {
+      const step = currentWidth < 4 ? 0.5 : (currentWidth < 12 ? 1 : 2);
+      const next = Math.max(1, Math.min(50, Math.round((currentWidth + delta * step) * 2) / 2));
+      updateBrushSize(next);
+      showSizeTooltip(`Size: ${next}px`, e.clientX, e.clientY);
+    }
+
+    updateBrushCursor(e.clientX, e.clientY);
+  }
+}, { passive: false });
+
+// Hide brush cursor when hovering over UI toolbars and settings popovers
+document.querySelectorAll('.toolbar, .color-popover, .size-popover').forEach(el => {
+  el.addEventListener('pointerenter', () => {
+    if (brushCursor) brushCursor.classList.add('hidden');
+  });
+  el.addEventListener('pointerleave', () => {
+    updateBrushCursor();
+  });
+});
+
+canvas.addEventListener('pointerleave', () => {
+  if (brushCursor) brushCursor.classList.add('hidden');
+});
+canvas.addEventListener('pointerenter', (e) => {
+  updateBrushCursor(e.clientX, e.clientY);
 });
 
 // Resize handles mousedown listener
@@ -772,6 +994,22 @@ undoBtn.addEventListener('click', (e) => {
   }
 });
 
+// Clear All Marks Action
+function clearCanvas() {
+  if (isEditingText) cancelText();
+  drawingActions = [];
+  activeShape = null;
+  updateUndoState();
+  draw();
+}
+
+if (clearBtn) {
+  clearBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    clearCanvas();
+  });
+}
+
 // Generate Cropped High Resolution Canvas
 function getCroppedCanvas() {
   if (!hasSelection) return null;
@@ -794,16 +1032,22 @@ function getCroppedCanvas() {
     0, 0, sw, sh   // Destination
   );
   
-  // Draw committed annotations
-  exportCtx.save();
-  exportCtx.scale(scaleFactor, scaleFactor);
-  exportCtx.translate(-selection.x, -selection.y);
+  // Draw committed annotations on clean layer
+  const annotCanvas = document.createElement('canvas');
+  annotCanvas.width = exportCanvas.width;
+  annotCanvas.height = exportCanvas.height;
+  const aCtx = annotCanvas.getContext('2d');
+  
+  aCtx.save();
+  aCtx.scale(scaleFactor, scaleFactor);
+  aCtx.translate(-selection.x, -selection.y);
   
   drawingActions.forEach(action => {
-    drawShapeOnCtx(exportCtx, action);
+    drawShapeOnCtx(aCtx, action);
   });
+  aCtx.restore();
   
-  exportCtx.restore();
+  exportCtx.drawImage(annotCanvas, 0, 0);
   return exportCanvas;
 }
 
@@ -904,5 +1148,42 @@ window.addEventListener('keydown', (e) => {
     copyBtn.click();
   } else if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
     saveBtn.click();
+  } else if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+    const k = e.key.toLowerCase();
+    if (k === 'c') {
+      clearCanvas();
+    } else if (k === 'p') {
+      setTool('pen');
+    } else if (k === 'e') {
+      setTool('eraser');
+    } else if (k === 'h') {
+      setTool('highlight');
+    } else if (k === 'a') {
+      setTool('arrow');
+    } else if (k === 'r') {
+      setTool('rect');
+    } else if (k === 'l') {
+      setTool('line');
+    } else if (k === 't') {
+      setTool('text');
+    } else if (e.key === '1') {
+      setColor('#ef4444');
+    } else if (e.key === '2') {
+      setColor('#f97316');
+    } else if (e.key === '3') {
+      setColor('#eab308');
+    } else if (e.key === '4') {
+      setColor('#22c55e');
+    } else if (e.key === '5') {
+      setColor('#06b6d4');
+    } else if (e.key === '6') {
+      setColor('#3b82f6');
+    } else if (e.key === '7') {
+      setColor('#a855f7');
+    } else if (e.key === '8') {
+      setColor('#ec4899');
+    } else if (e.key === '9') {
+      setColor('#ffffff');
+    }
   }
 });

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-start-marker"
+description = "Enables the start_marker command without any pre-configured scope."
+commands.allow = ["start_marker"]
+
+[[permission]]
+identifier = "deny-start-marker"
+description = "Denies the start_marker command without any pre-configured scope."
+commands.deny = ["start_marker"]

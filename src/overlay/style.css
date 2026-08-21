@@ -12,6 +12,7 @@ body {
   width: 100vw;
   height: 100vh;
   background: transparent;
+  touch-action: none;
 }
 
 canvas {
@@ -20,6 +21,75 @@ canvas {
   left: 0;
   cursor: crosshair;
   z-index: 1;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+/* Dynamic Brush / Pen / Eraser Cursor Indicator */
+.brush-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  z-index: 999;
+  box-sizing: border-box;
+  transition: width 0.04s ease-out, height 0.04s ease-out;
+}
+
+.brush-cursor.pen-cursor {
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.75), 0 0 4px rgba(0, 0, 0, 0.5);
+}
+
+.brush-cursor.eraser-cursor {
+  background: rgba(255, 255, 255, 0.22) !important;
+  border: 1.5px dashed #ffffff !important;
+  box-shadow: 0 0 0 1px #000000, inset 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+
+.brush-cursor.highlight-cursor {
+  opacity: 0.6;
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.75);
+}
+
+.brush-cursor.shape-cursor {
+  background: transparent !important;
+  border: 1.5px solid currentColor;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
+}
+
+.brush-cursor.hidden {
+  display: none !important;
+}
+
+/* Floating Size Tooltip while scrolling wheel */
+.brush-size-tooltip {
+  position: absolute;
+  z-index: 1000;
+  pointer-events: none;
+  background: rgba(15, 17, 23, 0.92);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  font-family: 'Outfit', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  transform: translate(14px, 14px);
+  transition: opacity 0.2s ease;
+  white-space: nowrap;
+}
+
+.brush-size-tooltip.hidden {
+  opacity: 0;
+  display: none;
 }
 
 /* Sizing Badge */
@@ -409,4 +479,53 @@ canvas {
   color: rgba(255, 255, 255, 0.85);
   min-width: 40px;
   text-align: right;
+}
+
+/* Marker Mode Styles */
+.marker-mode .size-badge,
+.marker-mode .resize-handle {
+  display: none !important;
+}
+
+.marker-mode .drawing-toolbar {
+  display: flex !important;
+  flex-direction: row;
+  left: 50% !important;
+  top: 18px !important;
+  transform: translateX(-50%) !important;
+  background: rgba(15, 17, 23, 0.92);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6),
+              0 0 20px rgba(245, 158, 11, 0.15);
+  padding: 6px 10px;
+  border-radius: 14px;
+}
+
+.marker-mode .drawing-toolbar .divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+}
+
+.marker-mode .drawing-toolbar .tool-btn[data-tool="select"] {
+  display: none;
+}
+
+.marker-mode .action-toolbar {
+  display: flex !important;
+  flex-direction: row;
+  left: auto !important;
+  right: 18px !important;
+  top: 18px !important;
+  transform: none !important;
+  background: rgba(15, 17, 23, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+  padding: 6px 10px;
+  border-radius: 14px;
+}
+
+#clearBtn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
 }

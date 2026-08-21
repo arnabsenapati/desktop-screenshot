@@ -5,6 +5,7 @@ fn main() {
             "log_message",
             "quit_app",
             "start_capture",
+            "start_marker",
             "start_burst_capture",
             "capture_region_frames",
             "set_widget_config_open",

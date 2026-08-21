@@ -1,7 +1,8 @@
 {
-  "name": "desktop-screenshot",
+  "name": "screen-util",
+  "productName": "ScreenUtil",
   "version": "1.0.0",
-  "description": "A premium Lightshot-like screenshot tool with drawing and annotation tools.",
+  "description": "ScreenUtil - Screen Capture, Annotation and Drawing Utility",
   "main": "index.js",
   "scripts": {
     "start": "tauri dev",

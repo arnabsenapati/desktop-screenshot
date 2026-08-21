@@ -115,6 +115,18 @@ body {
   filter: brightness(1.1);
 }
 
+.marker-btn {
+  background: linear-gradient(135deg, #f59e0b, #ef4444);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+}
+
+.marker-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(245, 158, 11, 0.5);
+  filter: brightness(1.1);
+}
+
 .burst-btn {
   background: linear-gradient(135deg, #ec4899, #8b5cf6);
   color: #ffffff;

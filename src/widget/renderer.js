@@ -1,5 +1,6 @@
 const dragHandle = document.getElementById('dragHandle') || document.querySelector('.drag-handle');
 const singleBtn = document.getElementById('singleCaptureBtn');
+const markerBtn = document.getElementById('markerBtn');
 const burstBtn = document.getElementById('burstCaptureBtn');
 const configBtn = document.getElementById('configBtn');
 const quitBtn = document.getElementById('quitBtn');
@@ -67,6 +68,18 @@ singleBtn.addEventListener('click', (e) => {
     window.electronAPI.startCapture();
   }
 });
+
+// Marker Mode Trigger
+if (markerBtn) {
+  markerBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    log('Marker button clicked');
+    if (window.electronAPI && window.electronAPI.startMarker) {
+      window.electronAPI.startMarker();
+    }
+  });
+}
 
 function getFrameSettings() {
   const count = Math.min(60, Math.max(2, parseInt(frameCountInput.value, 10) || 3));

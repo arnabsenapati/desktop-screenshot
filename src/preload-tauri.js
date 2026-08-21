@@ -29,6 +29,7 @@
     moveWidgetHorizontal: (dx) => safeInvoke('move_widget_horizontal', { dx }),
     quitApp: () => safeInvoke('quit_app'),
     startCapture: () => safeInvoke('start_capture'),
+    startMarker: () => safeInvoke('start_marker'),
     startBurstCapture: ({ count, intervalMs }) => safeInvoke('start_burst_capture', { count: count || 3, intervalMs: intervalMs || 1000 }),
     captureRegionFrames: ({ x, y, width, height, count, intervalMs }) => safeInvoke('capture_region_frames', { x, y, width, height, count, intervalMs }),
     setWidgetConfigOpen: (open) => safeInvoke('set_widget_config_open', { open }),

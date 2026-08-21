@@ -20,9 +20,9 @@ fn log_file(msg: &str) {
     }
 }
 
-const COMPACT_WIDGET_WIDTH: f64 = 118.0;
-const EXPANDED_WIDGET_WIDTH: f64 = 200.0;
-const SETTINGS_WIDGET_WIDTH: f64 = 260.0;
+const COMPACT_WIDGET_WIDTH: f64 = 156.0;
+const EXPANDED_WIDGET_WIDTH: f64 = 238.0;
+const SETTINGS_WIDGET_WIDTH: f64 = 280.0;
 const WIDGET_HEIGHT: f64 = 44.0;
 const SETTINGS_WIDGET_HEIGHT: f64 = 220.0;
 
@@ -58,8 +58,16 @@ fn quit_app() {
 #[tauri::command]
 async fn start_capture(app: AppHandle) {
     log_file("start_capture called");
-    if let Err(e) = capture_screen_and_open_overlay(app, None).await {
+    if let Err(e) = capture_screen_and_open_overlay(app, "screenshot", None).await {
         log_file(&format!("Capture failed: {}", e));
+    }
+}
+
+#[tauri::command]
+async fn start_marker(app: AppHandle) {
+    log_file("start_marker called");
+    if let Err(e) = capture_screen_and_open_overlay(app, "marker", None).await {
+        log_file(&format!("Marker failed: {}", e));
     }
 }
 
@@ -68,7 +76,7 @@ async fn start_burst_capture(app: AppHandle, count: u32, interval_ms: u64) {
     let count = count.clamp(2, 60);
     let interval_ms = interval_ms.clamp(100, 5_000);
     log_file(&format!("start_burst_capture called: {} frames, {} ms interval", count, interval_ms));
-    if let Err(error) = capture_screen_and_open_overlay(app, Some((count, interval_ms))).await {
+    if let Err(error) = capture_screen_and_open_overlay(app, "frame-selection", Some((count, interval_ms))).await {
         log_file(&format!("Unable to open frame selection: {}", error));
     }
 }
@@ -294,6 +302,7 @@ async fn search_image_google(png_bytes: Vec<u8>) -> Result<String, Box<dyn std::
 
 async fn capture_screen_and_open_overlay(
     app: AppHandle,
+    mode: &str,
     frame_capture: Option<(u32, u64)>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if let Some(main_win) = app.get_webview_window("main") {
@@ -337,9 +346,9 @@ async fn capture_screen_and_open_overlay(
         // Give the webview window a brief moment to process state change
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-        let (mode, frame_count, frame_interval_ms) = match frame_capture {
-            Some((count, interval_ms)) => ("frame-selection", Some(count), Some(interval_ms)),
-            None => ("screenshot", None, None),
+        let (frame_count, frame_interval_ms) = match frame_capture {
+            Some((count, interval_ms)) => (Some(count), Some(interval_ms)),
+            None => (None, None),
         };
 
         overlay_win.emit("screenshot-data", serde_json::json!({
@@ -437,19 +446,22 @@ pub fn run() {
     let shortcut_plugin = tauri_plugin_global_shortcut::Builder::new()
         .with_handler(|app, shortcut, event| {
             if event.state == ShortcutState::Pressed {
-                let trigger = if shortcut == &Shortcut::new(None, Code::PrintScreen) {
-                    true
-                } else if shortcut == &Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyS) {
-                    true
-                } else {
-                    false
-                };
+                let is_screenshot_shortcut = shortcut == &Shortcut::new(None, Code::PrintScreen)
+                    || shortcut == &Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyS);
+                let is_marker_shortcut = shortcut == &Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyD);
 
-                if trigger {
+                if is_screenshot_shortcut {
                     let app_handle = app.clone();
                     tauri::async_runtime::spawn(async move {
-                        if let Err(e) = capture_screen_and_open_overlay(app_handle, None).await {
+                        if let Err(e) = capture_screen_and_open_overlay(app_handle, "screenshot", None).await {
                             eprintln!("Shortcut capture failed: {}", e);
+                        }
+                    });
+                } else if is_marker_shortcut {
+                    let app_handle = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = capture_screen_and_open_overlay(app_handle, "marker", None).await {
+                            eprintln!("Shortcut marker failed: {}", e);
                         }
                     });
                 }
@@ -464,6 +476,7 @@ pub fn run() {
             log_message,
             quit_app,
             start_capture,
+            start_marker,
             start_burst_capture,
             capture_region_frames,
             set_widget_config_open,
@@ -481,7 +494,7 @@ pub fn run() {
             if is_instant_mode {
                 let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(e) = capture_screen_and_open_overlay(app_handle.clone(), None).await {
+                    if let Err(e) = capture_screen_and_open_overlay(app_handle.clone(), "screenshot", None).await {
                         eprintln!("Instant capture failed: {}", e);
                         rfd::MessageDialog::new()
                             .set_title("Capture Error")
@@ -521,9 +534,11 @@ pub fn run() {
 
                 let shortcut_print = Shortcut::new(None, Code::PrintScreen);
                 let shortcut_ctrl_shift_s = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyS);
+                let shortcut_ctrl_shift_d = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyD);
 
                 let _ = app.global_shortcut().register(shortcut_print);
                 let _ = app.global_shortcut().register(shortcut_ctrl_shift_s);
+                let _ = app.global_shortcut().register(shortcut_ctrl_shift_d);
             }
 
             Ok(())

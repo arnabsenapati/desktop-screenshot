@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
   dragWidget: (delta) => ipcRenderer.send('drag-widget', delta),
   startCapture: () => ipcRenderer.send('start-capture'),
+  startMarker: () => ipcRenderer.send('start-marker'),
   closeOverlay: () => ipcRenderer.send('close-overlay'),
   
   saveScreenshot: (dataUrl) => ipcRenderer.invoke('save-screenshot', dataUrl),

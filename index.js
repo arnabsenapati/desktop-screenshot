@@ -50,7 +50,7 @@ function createWidgetWindow() {
   });
 }
 
-async function captureScreenAndOpenOverlay() {
+async function captureScreenAndOpenOverlay(mode = 'screenshot') {
   try {
     // Hide the widget window first so it's not captured in the screenshot
     if (widgetWin && !widgetWin.isDestroyed()) {
@@ -100,27 +100,23 @@ async function captureScreenAndOpenOverlay() {
       }
     }
     
-    if (!targetSource) {
-      throw new Error('No screen sources found for capture.');
+    if (targetSource) {
+      const dataUrl = targetSource.thumbnail.toDataURL();
+      createOverlayWindow(dataUrl, bounds, mode);
     }
-    
-    const screenshotDataUrl = targetSource.thumbnail.toDataURL();
-    
-    // Open full screen overlay window on the active display
-    createOverlayWindow(screenshotDataUrl, bounds);
-  } catch (error) {
-    console.error('Failed to capture screen:', error);
+  } catch (err) {
+    console.error('Failed to capture screen:', err);
     // Restore widget window if capture failed
     if (widgetWin && !widgetWin.isDestroyed()) {
       widgetWin.show();
     } else if (isInstantMode) {
-      dialog.showErrorBox('Capture Error', 'Failed to capture screen: ' + error.message);
+      dialog.showErrorBox('Capture Error', 'Failed to capture screen: ' + err.message);
       app.quit();
     }
   }
 }
 
-function createOverlayWindow(dataUrl, bounds) {
+function createOverlayWindow(dataUrl, bounds, mode = 'screenshot') {
   if (overlayWin && !overlayWin.isDestroyed()) {
     overlayWin.destroy();
   }
@@ -154,7 +150,8 @@ function createOverlayWindow(dataUrl, bounds) {
     overlayWin.webContents.send('screenshot-data', {
       dataUrl,
       width: bounds.width,
-      height: bounds.height
+      height: bounds.height,
+      mode
     });
   });
 
@@ -178,7 +175,11 @@ ipcMain.on('drag-widget', (event, { dx, dy }) => {
 });
 
 ipcMain.on('start-capture', () => {
-  captureScreenAndOpenOverlay();
+  captureScreenAndOpenOverlay('screenshot');
+});
+
+ipcMain.on('start-marker', () => {
+  captureScreenAndOpenOverlay('marker');
 });
 
 ipcMain.on('close-overlay', () => {

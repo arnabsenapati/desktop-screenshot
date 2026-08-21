@@ -11,6 +11,7 @@
     "allow-log-message",
     "allow-quit-app",
     "allow-start-capture",
+    "allow-start-marker",
     "allow-start-burst-capture",
     "allow-capture-region-frames",
     "allow-set-widget-config-open",
