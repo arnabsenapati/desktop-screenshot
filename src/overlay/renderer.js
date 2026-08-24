@@ -3,6 +3,8 @@ const ctx = canvas.getContext('2d');
 const sizeBadge = document.getElementById('sizeBadge');
 const drawingToolbar = document.getElementById('drawingToolbar');
 const actionToolbar = document.getElementById('actionToolbar');
+const displaySwitcher = document.getElementById('displaySwitcher');
+const displayPills = document.getElementById('displayPills');
 
 // Tool buttons
 const toolButtons = document.querySelectorAll('.tool-btn');
@@ -55,6 +57,9 @@ let sizeTooltipTimeout = null;
 let lastPointerPos = { x: -100, y: -100 };
 let isMarkerMode = false;
 
+let displaysList = [];
+let activeDisplayIndex = 0;
+
 let drawingActions = []; // stack of committed shapes
 let activeShape = null; // shape in progress
 let annotationCanvas = null; // offscreen layer for clean erasing without touching screenshot
@@ -80,13 +85,95 @@ let antsInterval = null;
 let isEditingText = false;
 let activeTextarea = null;
 let frameCaptureSettings = null;
+let isAllDisplaysMode = false;
+
+function updateDisplaySwitcher() {
+  if (!displaySwitcher || !displayPills) return;
+
+  if (displaysList.length <= 1 || isMarkerMode) {
+    displaySwitcher.classList.add('hidden');
+    return;
+  }
+
+  displaySwitcher.classList.remove('hidden');
+  displayPills.innerHTML = '';
+
+  // "All Screens" pill
+  const allBtn = document.createElement('button');
+  allBtn.type = 'button';
+  allBtn.className = 'display-pill-btn';
+  if (isAllDisplaysMode) allBtn.classList.add('active');
+  allBtn.innerHTML = `<span>All Screens</span>`;
+  allBtn.title = 'Switch overlay to span all connected screens';
+  allBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!isAllDisplaysMode && window.electronAPI.switchOverlayDisplay) {
+      window.electronAPI.switchOverlayDisplay(-1, isMarkerMode ? 'marker' : 'screenshot');
+    } else {
+      selectDisplayBounds(0, 0, logicalWidth, logicalHeight);
+      setActiveDisplayPill(allBtn);
+    }
+  });
+  displayPills.appendChild(allBtn);
+
+  // Each connected monitor pill
+  displaysList.forEach((d, idx) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'display-pill-btn';
+    if (!isAllDisplaysMode && activeDisplayIndex === idx) {
+      btn.classList.add('active');
+    }
+    const shortName = d.isPrimary ? `Display ${idx + 1} (Main)` : `Display ${idx + 1} (Secondary)`;
+    btn.innerHTML = `<span>${shortName}</span> <span class="pill-badge">${Math.round(d.width)}×${Math.round(d.height)}</span>`;
+    btn.title = `Switch overlay to ${d.name} (${Math.round(d.width)}×${Math.round(d.height)})`;
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!isAllDisplaysMode && activeDisplayIndex !== idx && window.electronAPI.switchOverlayDisplay) {
+        window.electronAPI.switchOverlayDisplay(idx, isMarkerMode ? 'marker' : 'screenshot');
+      } else {
+        selectDisplayBounds(d.x, d.y, d.width, d.height);
+        setActiveDisplayPill(btn);
+      }
+    });
+    displayPills.appendChild(btn);
+  });
+}
+
+function setActiveDisplayPill(targetBtn) {
+  if (!displayPills) return;
+  displayPills.querySelectorAll('.display-pill-btn').forEach(btn => {
+    btn.classList.toggle('active', btn === targetBtn);
+  });
+}
+
+function selectDisplayBounds(x, y, w, h) {
+  if (isEditingText) commitText();
+  selection = {
+    x: Math.max(0, x),
+    y: Math.max(0, y),
+    w: Math.min(logicalWidth - x, w),
+    h: Math.min(logicalHeight - y, h)
+  };
+  hasSelection = true;
+  currentTool = 'select';
+  document.querySelector('.tool-btn.active')?.classList.remove('active');
+  document.querySelector('.tool-btn[data-tool="select"]')?.classList.add('active');
+  startMarchingAnts();
+  updateOverlays();
+  draw();
+}
 
 // Initialize
 window.electronAPI.onScreenshotData((data) => {
   isMarkerMode = data.mode === 'marker';
+  isAllDisplaysMode = data.isAllDisplays === true;
   frameCaptureSettings = data.mode === 'frame-selection'
     ? { count: data.frameCount, intervalMs: data.frameIntervalMs }
     : null;
+
+  displaysList = Array.isArray(data.displays) ? data.displays : [];
+  activeDisplayIndex = typeof data.activeDisplayIndex === 'number' ? data.activeDisplayIndex : 0;
 
   document.body.classList.toggle('frame-capture-mode', frameCaptureSettings !== null);
   document.body.classList.toggle('marker-mode', isMarkerMode);
@@ -116,6 +203,7 @@ window.electronAPI.onScreenshotData((data) => {
   drawingActions = [];
   activeShape = null;
   stopMarchingAnts();
+  updateDisplaySwitcher();
   updateOverlays();
   updateBrushCursor();
 
@@ -469,6 +557,35 @@ function draw() {
     } else {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
       ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+
+      // Draw subtle display boundaries & labels if multi-monitor
+      if (displaysList.length > 1) {
+        displaysList.forEach((d) => {
+          ctx.save();
+          ctx.strokeStyle = 'rgba(167, 139, 250, 0.35)';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([6, 6]);
+          ctx.strokeRect(d.x + 1, d.y + 1, d.width - 2, d.height - 2);
+          
+          // Display indicator tag
+          const badgeText = `${d.name} (${Math.round(d.width)} × ${Math.round(d.height)})`;
+          ctx.font = '500 13px Outfit, sans-serif';
+          const textWidth = ctx.measureText(badgeText).width;
+          
+          ctx.fillStyle = 'rgba(15, 17, 23, 0.85)';
+          ctx.beginPath();
+          ctx.roundRect(d.x + 20, d.y + 20, textWidth + 24, 28, 8);
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+          ctx.setLineDash([]);
+          ctx.stroke();
+          
+          ctx.fillStyle = '#ffffff';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(badgeText, d.x + 32, d.y + 34);
+          ctx.restore();
+        });
+      }
     }
   }
   
@@ -746,6 +863,7 @@ function onPointerDown(e) {
     selection = { x: pos.x, y: pos.y, w: 0, h: 0 };
     hasSelection = true;
     currentTool = 'select'; // Reset tool to select during creation
+    setActiveDisplayPill(null);
     document.querySelector('.tool-btn.active')?.classList.remove('active');
     document.querySelector('.tool-btn[data-tool="select"]')?.classList.add('active');
     
@@ -767,6 +885,7 @@ function onPointerDown(e) {
         mouseStart = pos;
         selection = { x: pos.x, y: pos.y, w: 0, h: 0 };
         hasSelection = false;
+        setActiveDisplayPill(null);
         updateOverlays();
         stopMarchingAnts();
         draw();
@@ -913,11 +1032,28 @@ if (window.PointerEvent) {
     onPointerUp();
   });
   window.addEventListener('pointercancel', onPointerUp);
-} else {
-  canvas.addEventListener('mousedown', onPointerDown);
-  window.addEventListener('mousemove', onPointerMove);
-  window.addEventListener('mouseup', onPointerUp);
 }
+
+// Double click to auto-snap selection to clicked display (or full canvas)
+canvas.addEventListener('dblclick', (e) => {
+  if (isMarkerMode) return;
+  const pos = getMousePos(e);
+  const matched = displaysList.find(d => 
+    pos.x >= d.x && pos.x < d.x + d.width &&
+    pos.y >= d.y && pos.y < d.y + d.height
+  );
+  if (matched) {
+    selectDisplayBounds(matched.x, matched.y, matched.width, matched.height);
+    const pills = displayPills ? displayPills.querySelectorAll('.display-pill-btn') : [];
+    if (pills[matched.index + 1]) {
+      setActiveDisplayPill(pills[matched.index + 1]);
+    }
+  } else {
+    selectDisplayBounds(0, 0, logicalWidth, logicalHeight);
+    const firstPill = displayPills ? displayPills.querySelector('.display-pill-btn') : null;
+    if (firstPill) setActiveDisplayPill(firstPill);
+  }
+});
 
 // Mouse Wheel Size Adjustment (Pen, Eraser, Highlighter, Shapes)
 window.addEventListener('wheel', (e) => {

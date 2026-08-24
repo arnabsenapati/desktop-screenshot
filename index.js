@@ -60,11 +60,36 @@ async function captureScreenAndOpenOverlay(mode = 'screenshot') {
     // Give the OS window manager a brief moment to finish hiding the window
     await new Promise(resolve => setTimeout(resolve, 150));
 
-    // Determine where the cursor is to capture that screen
+    // Get all displays
+    const displays = screen.getAllDisplays();
     const cursorPoint = screen.getCursorScreenPoint();
     const activeDisplay = screen.getDisplayNearestPoint(cursorPoint);
-    
-    // Scale factor is important for high DPI (retina/4k) screens
+    const activeIndex = displays.findIndex(d => d.id === activeDisplay.id);
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    displays.forEach(d => {
+      minX = Math.min(minX, d.bounds.x);
+      minY = Math.min(minY, d.bounds.y);
+      maxX = Math.max(maxX, d.bounds.x + d.bounds.width);
+      maxY = Math.max(maxY, d.bounds.y + d.bounds.height);
+    });
+
+    const totalWidth = maxX - minX;
+    const totalHeight = maxY - minY;
+
+    const displayMeta = displays.map((d, idx) => ({
+      index: idx,
+      id: d.id,
+      name: d.id === screen.getPrimaryDisplay().id ? `Display ${idx + 1} (Primary)` : `Display ${idx + 1}`,
+      isPrimary: d.id === screen.getPrimaryDisplay().id,
+      x: d.bounds.x - minX,
+      y: d.bounds.y - minY,
+      width: d.bounds.width,
+      height: d.bounds.height,
+      scaleFactor: d.scaleFactor
+    }));
+
+    // Scale factor for active display
     const scale = activeDisplay.scaleFactor;
     const bounds = activeDisplay.bounds;
     
@@ -77,32 +102,14 @@ async function captureScreenAndOpenOverlay(mode = 'screenshot') {
       }
     });
     
-    // Find the correct source
-    let targetSource = null;
-    if (sources.length > 0) {
-      // Find matching display_id
-      targetSource = sources.find(s => s.display_id === activeDisplay.id.toString());
-      // Fallback 1: match display ID as number/string check
-      if (!targetSource) {
-        targetSource = sources.find(s => s.display_id && String(s.display_id) === String(activeDisplay.id));
-      }
-      // Fallback 2: take the source at display index if displays match list size
-      if (!targetSource) {
-        const displays = screen.getAllDisplays();
-        const activeIndex = displays.findIndex(d => d.id === activeDisplay.id);
-        if (activeIndex !== -1 && sources[activeIndex]) {
-          targetSource = sources[activeIndex];
-        }
-      }
-      // Fallback 3: take first source
-      if (!targetSource) {
-        targetSource = sources[0];
-      }
-    }
+    // Find matching source
+    let targetSource = sources.find(s => s.display_id === activeDisplay.id.toString())
+      || sources.find(s => s.display_id && String(s.display_id) === String(activeDisplay.id))
+      || (activeIndex !== -1 && sources[activeIndex] ? sources[activeIndex] : sources[0]);
     
     if (targetSource) {
       const dataUrl = targetSource.thumbnail.toDataURL();
-      createOverlayWindow(dataUrl, bounds, mode);
+      createOverlayWindow(dataUrl, bounds, mode, displayMeta, activeIndex >= 0 ? activeIndex : 0);
     }
   } catch (err) {
     console.error('Failed to capture screen:', err);
@@ -116,7 +123,7 @@ async function captureScreenAndOpenOverlay(mode = 'screenshot') {
   }
 }
 
-function createOverlayWindow(dataUrl, bounds, mode = 'screenshot') {
+function createOverlayWindow(dataUrl, bounds, mode = 'screenshot', displayMeta = [], activeDisplayIndex = 0) {
   if (overlayWin && !overlayWin.isDestroyed()) {
     overlayWin.destroy();
   }
@@ -129,10 +136,10 @@ function createOverlayWindow(dataUrl, bounds, mode = 'screenshot') {
     frame: false,
     transparent: true,
     alwaysOnTop: true,
-    resizable: false,
+    resizable: true,
     movable: false,
     enableLargerThanScreen: true,
-    fullscreen: true, // make sure it takes full display area
+    fullscreen: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -151,7 +158,9 @@ function createOverlayWindow(dataUrl, bounds, mode = 'screenshot') {
       dataUrl,
       width: bounds.width,
       height: bounds.height,
-      mode
+      mode,
+      displays: displayMeta,
+      activeDisplayIndex
     });
   });
 

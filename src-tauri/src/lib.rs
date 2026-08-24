@@ -20,9 +20,9 @@ fn log_file(msg: &str) {
     }
 }
 
-const COMPACT_WIDGET_WIDTH: f64 = 156.0;
-const EXPANDED_WIDGET_WIDTH: f64 = 238.0;
-const SETTINGS_WIDGET_WIDTH: f64 = 280.0;
+const COMPACT_WIDGET_WIDTH: f64 = 196.0;
+const EXPANDED_WIDGET_WIDTH: f64 = 278.0;
+const SETTINGS_WIDGET_WIDTH: f64 = 300.0;
 const WIDGET_HEIGHT: f64 = 44.0;
 const SETTINGS_WIDGET_HEIGHT: f64 = 220.0;
 
@@ -45,6 +45,36 @@ fn resize_widget(main_win: &tauri::WebviewWindow, width: f64, height: f64) {
 // Custom Commands
 
 #[tauri::command]
+fn get_displays() -> Vec<serde_json::Value> {
+    let screens = Screen::all().unwrap_or_default();
+    let mut min_x = i32::MAX;
+    let mut min_y = i32::MAX;
+    for s in &screens {
+        min_x = min_x.min(s.display_info.x);
+        min_y = min_y.min(s.display_info.y);
+    }
+    screens.iter().enumerate().map(|(idx, s)| {
+        let info = &s.display_info;
+        let name = if info.is_primary {
+            format!("Display {} (Main: {}×{})", idx + 1, info.width, info.height)
+        } else {
+            format!("Display {} (Secondary: {}×{})", idx + 1, info.width, info.height)
+        };
+        serde_json::json!({
+            "index": idx,
+            "id": info.id,
+            "name": name,
+            "isPrimary": info.is_primary,
+            "x": (info.x - min_x) as f64,
+            "y": (info.y - min_y) as f64,
+            "width": info.width as f64,
+            "height": info.height as f64,
+            "scaleFactor": info.scale_factor
+        })
+    }).collect()
+}
+
+#[tauri::command]
 fn log_message(msg: String) {
     log_file(&format!("[JS] {}", msg));
 }
@@ -56,27 +86,36 @@ fn quit_app() {
 }
 
 #[tauri::command]
-async fn start_capture(app: AppHandle) {
-    log_file("start_capture called");
-    if let Err(e) = capture_screen_and_open_overlay(app, "screenshot", None).await {
+async fn start_capture(app: AppHandle, target_display: Option<i32>) {
+    log_file(&format!("start_capture called with target_display: {:?}", target_display));
+    if let Err(e) = capture_screen_and_open_overlay(app, "screenshot", None, target_display).await {
         log_file(&format!("Capture failed: {}", e));
     }
 }
 
 #[tauri::command]
-async fn start_marker(app: AppHandle) {
-    log_file("start_marker called");
-    if let Err(e) = capture_screen_and_open_overlay(app, "marker", None).await {
+async fn start_marker(app: AppHandle, target_display: Option<i32>) {
+    log_file(&format!("start_marker called with target_display: {:?}", target_display));
+    if let Err(e) = capture_screen_and_open_overlay(app, "marker", None, target_display).await {
         log_file(&format!("Marker failed: {}", e));
     }
 }
 
 #[tauri::command]
-async fn start_burst_capture(app: AppHandle, count: u32, interval_ms: u64) {
+async fn switch_overlay_display(app: AppHandle, display_idx: i32, mode: Option<String>) {
+    let mode_str = mode.unwrap_or_else(|| "screenshot".to_string());
+    log_file(&format!("switch_overlay_display called with display_idx: {}", display_idx));
+    if let Err(e) = capture_screen_and_open_overlay(app, &mode_str, None, Some(display_idx)).await {
+        log_file(&format!("Switch overlay display failed: {}", e));
+    }
+}
+
+#[tauri::command]
+async fn start_burst_capture(app: AppHandle, count: u32, interval_ms: u64, target_display: Option<i32>) {
     let count = count.clamp(2, 60);
     let interval_ms = interval_ms.clamp(100, 5_000);
-    log_file(&format!("start_burst_capture called: {} frames, {} ms interval", count, interval_ms));
-    if let Err(error) = capture_screen_and_open_overlay(app, "frame-selection", Some((count, interval_ms))).await {
+    log_file(&format!("start_burst_capture called: {} frames, {} ms interval, target_display: {:?}", count, interval_ms, target_display));
+    if let Err(error) = capture_screen_and_open_overlay(app, "frame-selection", Some((count, interval_ms)), target_display).await {
         log_file(&format!("Unable to open frame selection: {}", error));
     }
 }
@@ -161,10 +200,21 @@ fn move_widget_horizontal(app: AppHandle, dx: f64) {
             let current_x = pos.x as f64 / scale_factor;
             let new_x = current_x + dx;
 
-            let clamped_x = if let Ok(Some(monitor)) = main_win.primary_monitor() {
-                let screen_width = monitor.size().width as f64 / scale_factor;
+            let monitors = main_win.available_monitors().unwrap_or_default();
+            let clamped_x = if !monitors.is_empty() {
+                let mut min_logical_x = f64::MAX;
+                let mut max_logical_x = f64::MIN;
+                for m in &monitors {
+                    let sf = m.scale_factor();
+                    let m_pos = m.position();
+                    let m_size = m.size();
+                    let left = m_pos.x as f64 / sf;
+                    let right = (m_pos.x + m_size.width as i32) as f64 / sf;
+                    min_logical_x = min_logical_x.min(left);
+                    max_logical_x = max_logical_x.max(right);
+                }
                 let widget_width = main_win.outer_size().map(|s| s.width as f64 / scale_factor).unwrap_or(260.0);
-                new_x.max(0.0).min(screen_width - widget_width)
+                new_x.max(min_logical_x).min(max_logical_x - widget_width)
             } else {
                 new_x
             };
@@ -304,6 +354,7 @@ async fn capture_screen_and_open_overlay(
     app: AppHandle,
     mode: &str,
     frame_capture: Option<(u32, u64)>,
+    target_display: Option<i32>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if let Some(main_win) = app.get_webview_window("main") {
         main_win.hide()?;
@@ -312,33 +363,115 @@ async fn capture_screen_and_open_overlay(
     // Short delay to let the OS hide the widget window
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
+    let screens = Screen::all().unwrap_or_default();
+    if screens.is_empty() {
+        return Err("No displays detected".into());
+    }
+
     let (cx, cy) = match Mouse::get_mouse_position() {
         Mouse::Position { x, y } => (x, y),
-        _ => (0, 0)
+        _ => (0, 0),
     };
 
-    let screen = Screen::from_point(cx, cy).unwrap_or_else(|_| {
-        Screen::all().unwrap_or_default().into_iter().next().expect("No screens found")
-    });
+    let mut min_x = i32::MAX;
+    let mut min_y = i32::MAX;
+    for s in &screens {
+        min_x = min_x.min(s.display_info.x);
+        min_y = min_y.min(s.display_info.y);
+    }
 
-    let image = screen.capture()?;
-    
-    let mut png_bytes = Vec::new();
-    screenshots::image::DynamicImage::ImageRgba8(image)
-        .write_to(&mut Cursor::new(&mut png_bytes), screenshots::image::ImageOutputFormat::Png)?;
+    let display_meta: Vec<serde_json::Value> = screens.iter().enumerate().map(|(idx, s)| {
+        let info = &s.display_info;
+        let display_name = if info.is_primary {
+            format!("Display {} (Main: {}×{})", idx + 1, info.width, info.height)
+        } else {
+            format!("Display {} (Secondary: {}×{})", idx + 1, info.width, info.height)
+        };
+        serde_json::json!({
+            "index": idx,
+            "id": info.id,
+            "name": display_name,
+            "isPrimary": info.is_primary,
+            "x": (info.x - min_x) as f64,
+            "y": (info.y - min_y) as f64,
+            "width": info.width as f64,
+            "height": info.height as f64,
+            "scaleFactor": info.scale_factor,
+        })
+    }).collect();
 
-    let base64_image = BASE64.encode(&png_bytes);
-    let data_url = format!("data:image/png;base64,{}", base64_image);
+    // Determine target screen index
+    // target_display:
+    // Some(idx >= 0) => capture that specific screen
+    // Some(-1) => capture all screens (stitched)
+    // None or Some(-2) => auto-detect screen containing mouse cursor (or screen 0)
+    let selected_idx = match target_display {
+        Some(idx) if idx >= 0 && (idx as usize) < screens.len() => Some(idx as usize),
+        Some(-1) => None, // None means capture all screens
+        _ => {
+            let cursor_idx = screens.iter().position(|s| {
+                let info = &s.display_info;
+                cx >= info.x
+                    && cx < (info.x + info.width as i32)
+                    && cy >= info.y
+                    && cy < (info.y + info.height as i32)
+            });
+            cursor_idx.or(Some(0))
+        }
+    };
+
+    let (captured_data_url, win_x, win_y, win_w, win_h, active_idx) = match selected_idx {
+        Some(idx) => {
+            // Capture the single targeted screen
+            let screen = &screens[idx];
+            let info = &screen.display_info;
+            let img = screen.capture()?;
+
+            let mut png_bytes = Vec::new();
+            screenshots::image::DynamicImage::ImageRgba8(img)
+                .write_to(&mut Cursor::new(&mut png_bytes), screenshots::image::ImageOutputFormat::Png)?;
+
+            let base64_image = BASE64.encode(&png_bytes);
+            let data_url = format!("data:image/png;base64,{}", base64_image);
+
+            (data_url, info.x, info.y, info.width, info.height, idx)
+        }
+        None => {
+            // Capture all screens stitched together
+            let mut max_x = i32::MIN;
+            let mut max_y = i32::MIN;
+            for s in &screens {
+                let info = &s.display_info;
+                max_x = max_x.max(info.x + info.width as i32);
+                max_y = max_y.max(info.y + info.height as i32);
+            }
+            let total_width = (max_x - min_x).max(1) as u32;
+            let total_height = (max_y - min_y).max(1) as u32;
+
+            let mut combined_image = screenshots::image::RgbaImage::new(total_width, total_height);
+            for s in &screens {
+                let info = &s.display_info;
+                if let Ok(img) = s.capture() {
+                    let offset_x = (info.x - min_x) as i64;
+                    let offset_y = (info.y - min_y) as i64;
+                    screenshots::image::imageops::overlay(&mut combined_image, &img, offset_x, offset_y);
+                }
+            }
+
+            let mut png_bytes = Vec::new();
+            screenshots::image::DynamicImage::ImageRgba8(combined_image)
+                .write_to(&mut Cursor::new(&mut png_bytes), screenshots::image::ImageOutputFormat::Png)?;
+
+            let base64_image = BASE64.encode(&png_bytes);
+            let data_url = format!("data:image/png;base64,{}", base64_image);
+
+            (data_url, min_x, min_y, total_width, total_height, 0)
+        }
+    };
 
     if let Some(overlay_win) = app.get_webview_window("overlay") {
-        let display_info = screen.display_info;
-        let x = display_info.x as f64;
-        let y = display_info.y as f64;
-        let width = display_info.width as f64;
-        let height = display_info.height as f64;
-
-        let _ = overlay_win.set_size(tauri::Size::Logical(tauri::LogicalSize::new(width, height)));
-        let _ = overlay_win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
+        let _ = overlay_win.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(win_x, win_y)));
+        let _ = overlay_win.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(win_w, win_h)));
 
         overlay_win.show()?;
         overlay_win.set_focus()?;
@@ -352,12 +485,15 @@ async fn capture_screen_and_open_overlay(
         };
 
         overlay_win.emit("screenshot-data", serde_json::json!({
-            "dataUrl": data_url,
-            "width": width,
-            "height": height,
+            "dataUrl": captured_data_url,
+            "width": win_w as f64,
+            "height": win_h as f64,
             "mode": mode,
             "frameCount": frame_count,
-            "frameIntervalMs": frame_interval_ms
+            "frameIntervalMs": frame_interval_ms,
+            "displays": display_meta,
+            "activeDisplayIndex": active_idx,
+            "isAllDisplays": selected_idx.is_none()
         }))?;
     }
 
@@ -377,43 +513,58 @@ async fn capture_region_frames_to_clipboard(
     }
 
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-    let (cursor_x, cursor_y) = match Mouse::get_mouse_position() {
-        Mouse::Position { x, y } => (x, y),
-        _ => (0, 0),
-    };
-    let screen = match Screen::from_point(cursor_x, cursor_y) {
-        Ok(screen) => screen,
-        Err(_) => Screen::all()
-            .map_err(|error| error.to_string())?
-            .into_iter()
-            .next()
-            .ok_or_else(|| "No display is available for frame capture.".to_string())?,
-    };
+
+    let screens = Screen::all().map_err(|error| error.to_string())?;
+    if screens.is_empty() {
+        return Err("No display is available for frame capture.".to_string());
+    }
+
+    let mut min_x = i32::MAX;
+    let mut min_y = i32::MAX;
+    let mut max_x = i32::MIN;
+    let mut max_y = i32::MIN;
+
+    for s in &screens {
+        let info = &s.display_info;
+        min_x = min_x.min(info.x);
+        min_y = min_y.min(info.y);
+        max_x = max_x.max(info.x + info.width as i32);
+        max_y = max_y.max(info.y + info.height as i32);
+    }
+
+    let total_width = (max_x - min_x).max(1) as u32;
+    let total_height = (max_y - min_y).max(1) as u32;
+
+    let crop_x = x.round() as u32;
+    let crop_y = y.round() as u32;
+    let crop_w = width.round() as u32;
+    let crop_h = height.round() as u32;
+
+    if crop_w == 0
+        || crop_h == 0
+        || crop_x.saturating_add(crop_w) > total_width
+        || crop_y.saturating_add(crop_h) > total_height
+    {
+        return Err("The selected region is outside the captured screen area.".to_string());
+    }
 
     for frame_index in 0..count {
         log_file(&format!("Capturing and copying frame {} of {}", frame_index + 1, count));
-        let image = screen.capture().map_err(|error| error.to_string())?;
-        let scale_x = image.width() as f64 / screen.display_info.width as f64;
-        let scale_y = image.height() as f64 / screen.display_info.height as f64;
-        let crop_x = (x * scale_x).round() as u32;
-        let crop_y = (y * scale_y).round() as u32;
-        let crop_width = (width * scale_x).round() as u32;
-        let crop_height = (height * scale_y).round() as u32;
-
-        if crop_width == 0
-            || crop_height == 0
-            || crop_x.saturating_add(crop_width) > image.width()
-            || crop_y.saturating_add(crop_height) > image.height()
-        {
-            return Err("The selected region is outside the captured display.".to_string());
+        let mut combined = screenshots::image::RgbaImage::new(total_width, total_height);
+        for s in &screens {
+            if let Ok(img) = s.capture() {
+                let off_x = (s.display_info.x - min_x) as i64;
+                let off_y = (s.display_info.y - min_y) as i64;
+                screenshots::image::imageops::overlay(&mut combined, &img, off_x, off_y);
+            }
         }
 
         let cropped = screenshots::image::imageops::crop_imm(
-            &image,
+            &combined,
             crop_x,
             crop_y,
-            crop_width,
-            crop_height,
+            crop_w,
+            crop_h,
         )
         .to_image();
 
@@ -453,14 +604,14 @@ pub fn run() {
                 if is_screenshot_shortcut {
                     let app_handle = app.clone();
                     tauri::async_runtime::spawn(async move {
-                        if let Err(e) = capture_screen_and_open_overlay(app_handle, "screenshot", None).await {
+                        if let Err(e) = capture_screen_and_open_overlay(app_handle, "screenshot", None, None).await {
                             eprintln!("Shortcut capture failed: {}", e);
                         }
                     });
                 } else if is_marker_shortcut {
                     let app_handle = app.clone();
                     tauri::async_runtime::spawn(async move {
-                        if let Err(e) = capture_screen_and_open_overlay(app_handle, "marker", None).await {
+                        if let Err(e) = capture_screen_and_open_overlay(app_handle, "marker", None, None).await {
                             eprintln!("Shortcut marker failed: {}", e);
                         }
                     });
@@ -473,6 +624,7 @@ pub fn run() {
         .plugin(shortcut_plugin)
         .plugin(tauri_plugin_log::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
+            get_displays,
             log_message,
             quit_app,
             start_capture,
@@ -485,7 +637,8 @@ pub fn run() {
             close_overlay,
             save_screenshot,
             copy_screenshot,
-            search_image
+            search_image,
+            switch_overlay_display
         ])
         .setup(|app| {
             let args: Vec<String> = std::env::args().collect();
@@ -494,7 +647,7 @@ pub fn run() {
             if is_instant_mode {
                 let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(e) = capture_screen_and_open_overlay(app_handle.clone(), "screenshot", None).await {
+                    if let Err(e) = capture_screen_and_open_overlay(app_handle.clone(), "screenshot", None, None).await {
                         eprintln!("Instant capture failed: {}", e);
                         rfd::MessageDialog::new()
                             .set_title("Capture Error")

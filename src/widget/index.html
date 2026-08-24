@@ -30,6 +30,16 @@
         </svg>
       </button>
 
+      <!-- Display Switcher Button -->
+      <button class="notch-icon-btn display-btn" id="displayToggleBtn" title="Switch Target Monitor (Click to cycle)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+          <line x1="8" y1="21" x2="16" y2="21"></line>
+          <line x1="12" y1="17" x2="12" y2="21"></line>
+        </svg>
+        <span class="display-badge-num" id="displayBadgeNum">Auto</span>
+      </button>
+
       <!-- Screen Marker / Live Annotation Button -->
       <button class="notch-icon-btn marker-btn" id="markerBtn" title="Screen Marker / Draw on Screen (Ctrl+Shift+D)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -84,6 +94,16 @@
         <span id="captureSummary">3 frames, 1 second apart</span>
       </div>
       <button class="reset-btn" id="resetSettingsBtn" type="button">Reset</button>
+    </div>
+
+    <div class="setting-row">
+      <label>Monitor</label>
+      <div class="interval-presets" id="displaySettingsRow" aria-label="Target screen selection">
+        <button type="button" data-disp-target="-2" class="active">Auto</button>
+        <button type="button" data-disp-target="0">Screen 1</button>
+        <button type="button" data-disp-target="1">Screen 2</button>
+        <button type="button" data-disp-target="-1">All</button>
+      </div>
     </div>
 
     <div class="setting-row">

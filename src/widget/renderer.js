@@ -1,5 +1,7 @@
 const dragHandle = document.getElementById('dragHandle') || document.querySelector('.drag-handle');
 const singleBtn = document.getElementById('singleCaptureBtn');
+const displayToggleBtn = document.getElementById('displayToggleBtn');
+const displayBadgeNum = document.getElementById('displayBadgeNum');
 const markerBtn = document.getElementById('markerBtn');
 const burstBtn = document.getElementById('burstCaptureBtn');
 const configBtn = document.getElementById('configBtn');
@@ -11,6 +13,41 @@ const captureSummary = document.getElementById('captureSummary');
 
 const frameCountInput = document.getElementById('frameCountInput');
 const frameIntervalInput = document.getElementById('frameIntervalInput');
+
+// Target display: -2 = Auto (Cursor screen), 0 = Display 1 (Main), 1 = Display 2 (Secondary), -1 = All Screens
+let targetDisplay = -2;
+const displayOptions = [-2, 0, 1, -1];
+const displayLabels = {
+  '-2': 'Auto',
+  '0': '1',
+  '1': '2',
+  '-1': 'All'
+};
+
+function setTargetDisplay(val) {
+  targetDisplay = Number(val);
+  if (displayBadgeNum) {
+    displayBadgeNum.textContent = displayLabels[String(targetDisplay)] || 'Auto';
+  }
+  document.querySelectorAll('[data-disp-target]').forEach(btn => {
+    btn.classList.toggle('active', Number(btn.dataset.dispTarget) === targetDisplay);
+  });
+  log(`Target display set to: ${targetDisplay} (${displayLabels[String(targetDisplay)]})`);
+}
+
+if (displayToggleBtn) {
+  displayToggleBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const currentIdx = displayOptions.indexOf(targetDisplay);
+    const nextIdx = (currentIdx + 1) % displayOptions.length;
+    setTargetDisplay(displayOptions[nextIdx]);
+  });
+}
+
+function getSelectedTargetDisplayParam() {
+  return targetDisplay === -2 ? null : targetDisplay;
+}
 
 function log(msg) {
   console.log('[RENDERER]', msg);
@@ -63,9 +100,9 @@ window.addEventListener('mouseup', () => {
 singleBtn.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
-  log('Single Screenshot button clicked');
+  log(`Single Screenshot button clicked (target=${targetDisplay})`);
   if (window.electronAPI && window.electronAPI.startCapture) {
-    window.electronAPI.startCapture();
+    window.electronAPI.startCapture(getSelectedTargetDisplayParam());
   }
 });
 
@@ -74,9 +111,9 @@ if (markerBtn) {
   markerBtn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    log('Marker button clicked');
+    log(`Marker button clicked (target=${targetDisplay})`);
     if (window.electronAPI && window.electronAPI.startMarker) {
-      window.electronAPI.startMarker();
+      window.electronAPI.startMarker(getSelectedTargetDisplayParam());
     }
   });
 }
@@ -141,7 +178,7 @@ burstBtn.addEventListener('click', async (e) => {
     burstBtn.classList.add('capturing');
     burstBtn.title = 'Capturing frames…';
     try {
-      await window.electronAPI.startBurstCapture({ count, intervalMs });
+      await window.electronAPI.startBurstCapture({ count, intervalMs, targetDisplay: getSelectedTargetDisplayParam() });
     } catch (error) {
       console.error('Frame capture failed:', error);
       alert(`Frame capture failed: ${error}`);
@@ -174,6 +211,12 @@ configBtn.addEventListener('click', (e) => {
 
 inlineConfig.addEventListener('click', (e) => {
   e.stopPropagation();
+});
+
+document.querySelectorAll('[data-disp-target]').forEach((button) => {
+  button.addEventListener('click', () => {
+    setTargetDisplay(button.dataset.dispTarget);
+  });
 });
 
 document.querySelectorAll('.stepper-btn').forEach((button) => {

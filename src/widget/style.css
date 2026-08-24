@@ -115,6 +115,36 @@ body {
   filter: brightness(1.1);
 }
 
+.display-btn {
+  width: auto !important;
+  min-width: 32px;
+  padding: 0 6px !important;
+  gap: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #e2e8f0;
+}
+
+.display-btn:hover {
+  background: rgba(139, 92, 246, 0.25);
+  border-color: rgba(139, 92, 246, 0.5);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.display-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke: #a78bfa;
+}
+
+.display-badge-num {
+  font-size: 10px;
+  font-weight: 700;
+  color: #c4b5fd;
+  letter-spacing: 0.2px;
+}
+
 .marker-btn {
   background: linear-gradient(135deg, #f59e0b, #ef4444);
   color: #ffffff;

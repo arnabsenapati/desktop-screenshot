@@ -13,7 +13,7 @@
         "label": "main",
         "title": "ScreenUtil Widget",
         "url": "widget/index.html",
-        "width": 156,
+        "width": 196,
         "height": 44,
         "resizable": false,
         "decorations": false,
@@ -30,8 +30,7 @@
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
-        "resizable": false,
-        "fullscreen": true,
+        "resizable": true,
         "visible": false,
         "skipTaskbar": true
       }
