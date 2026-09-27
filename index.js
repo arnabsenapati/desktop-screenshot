@@ -1,6 +1,18 @@
 const { app, BrowserWindow, ipcMain, screen, desktopCapturer, dialog, clipboard, nativeImage, shell, globalShortcut, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { execSync } = require('child_process');
+
+if (process.platform === 'win32') {
+  try {
+    const currentPid = process.pid;
+    execSync(`taskkill /F /FI "PID ne ${currentPid}" /IM screenutil.exe`, { stdio: 'ignore', windowsHide: true });
+    execSync(`taskkill /F /FI "PID ne ${currentPid}" /IM ScreenUtil.exe`, { stdio: 'ignore', windowsHide: true });
+    execSync(`taskkill /F /FI "PID ne ${currentPid}" /IM desktop-screenshot.exe`, { stdio: 'ignore', windowsHide: true });
+  } catch (e) {
+    // Process not found or taskkill failed silently
+  }
+}
 
 let widgetWin = null;
 let overlayWin = null;

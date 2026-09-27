@@ -20,6 +20,113 @@ fn log_file(msg: &str) {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn kill_existing_instances() {
+    use std::ffi::c_void;
+
+    type HANDLE = *mut c_void;
+    type BOOL = i32;
+    type DWORD = u32;
+
+    const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
+    const TH32CS_SNAPPROCESS: DWORD = 0x00000002;
+    const PROCESS_TERMINATE: DWORD = 0x0001;
+    const FALSE: BOOL = 0;
+
+    #[repr(C)]
+    struct PROCESSENTRY32W {
+        dw_size: DWORD,
+        cnt_usage: DWORD,
+        th32_process_id: DWORD,
+        th32_default_heap_id: usize,
+        th32_module_id: DWORD,
+        cnt_threads: DWORD,
+        th32_parent_process_id: DWORD,
+        pc_pri_class_base: i32,
+        dw_flags: DWORD,
+        sz_exe_file: [u16; 260],
+    }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn CreateToolhelp32Snapshot(dw_flags: DWORD, th32_process_id: DWORD) -> HANDLE;
+        fn Process32FirstW(h_snapshot: HANDLE, lppe: *mut PROCESSENTRY32W) -> BOOL;
+        fn Process32NextW(h_snapshot: HANDLE, lppe: *mut PROCESSENTRY32W) -> BOOL;
+        fn OpenProcess(dw_desired_access: DWORD, b_inherit_handle: BOOL, dw_process_id: DWORD) -> HANDLE;
+        fn TerminateProcess(h_process: HANDLE, u_exit_code: u32) -> BOOL;
+        fn CloseHandle(h_object: HANDLE) -> BOOL;
+    }
+
+    let current_pid = std::process::id();
+    let current_exe_name = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase()));
+
+    let target_names = [
+        "screenutil.exe",
+        "screenutil",
+        "screen-util.exe",
+        "screen-util",
+        "desktop-screenshot.exe",
+        "desktop-screenshot",
+    ];
+    let mut killed_any = false;
+
+    unsafe {
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snapshot != INVALID_HANDLE_VALUE {
+            let mut entry: PROCESSENTRY32W = std::mem::zeroed();
+            entry.dw_size = std::mem::size_of::<PROCESSENTRY32W>() as DWORD;
+
+            if Process32FirstW(snapshot, &mut entry) != FALSE {
+                loop {
+                    let pid = entry.th32_process_id;
+                    if pid != current_pid && pid != 0 {
+                        let len = entry
+                            .sz_exe_file
+                            .iter()
+                            .position(|&c| c == 0)
+                            .unwrap_or(entry.sz_exe_file.len());
+                        let exe_name = String::from_utf16_lossy(&entry.sz_exe_file[..len]).to_lowercase();
+
+                        let is_match = target_names.iter().any(|&target| exe_name == target)
+                            || current_exe_name
+                                .as_ref()
+                                .map_or(false, |curr| &exe_name == curr);
+
+                        if is_match {
+                            let handle = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+                            if !handle.is_null() && handle != INVALID_HANDLE_VALUE {
+                                let res = TerminateProcess(handle, 1);
+                                CloseHandle(handle);
+                                if res != FALSE {
+                                    log_file(&format!(
+                                        "Terminated existing instance: {} (PID: {})",
+                                        exe_name, pid
+                                    ));
+                                    killed_any = true;
+                                }
+                            }
+                        }
+                    }
+
+                    if Process32NextW(snapshot, &mut entry) == FALSE {
+                        break;
+                    }
+                }
+            }
+            CloseHandle(snapshot);
+        }
+    }
+
+    if killed_any {
+        std::thread::sleep(std::time::Duration::from_millis(150));
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn kill_existing_instances() {}
+
 const COMPACT_WIDGET_WIDTH: f64 = 196.0;
 const EXPANDED_WIDGET_WIDTH: f64 = 278.0;
 const SETTINGS_WIDGET_WIDTH: f64 = 300.0;
@@ -594,6 +701,8 @@ fn copy_frame_to_clipboard(image: screenshots::image::RgbaImage) -> Result<(), S
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    kill_existing_instances();
+
     let shortcut_plugin = tauri_plugin_global_shortcut::Builder::new()
         .with_handler(|app, shortcut, event| {
             if event.state == ShortcutState::Pressed {
