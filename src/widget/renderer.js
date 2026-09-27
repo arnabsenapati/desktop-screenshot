@@ -60,33 +60,55 @@ log('Widget renderer initialized');
 
 let isDragging = false;
 let startX = 0;
+let startY = 0;
 let dragMoved = false;
 let advancedControlsVisible = false;
 
-// Horizontal Sliding (JS Mouse Tracking)
-dragHandle.addEventListener('mousedown', (e) => {
+// 2D Floating Drag Tracking with Pointer Capture
+function startDrag(e) {
+  if (e.button !== 0) return;
   isDragging = true;
   dragMoved = false;
   startX = e.screenX;
-  log(`drag start at x=${startX}`);
+  startY = e.screenY;
+  if (dragHandle.setPointerCapture && e.pointerId !== undefined) {
+    try {
+      dragHandle.setPointerCapture(e.pointerId);
+    } catch (_) {}
+  }
+  log(`drag start at x=${startX}, y=${startY}`);
   e.preventDefault();
   e.stopPropagation();
-});
+}
 
-window.addEventListener('mousemove', (e) => {
+function handleDragMove(e) {
   if (!isDragging) return;
   
   const dx = e.screenX - startX;
+  const dy = e.screenY - startY;
   startX = e.screenX;
+  startY = e.screenY;
   
-  if (dx !== 0 && window.electronAPI && window.electronAPI.moveWidgetHorizontal) {
+  if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
     dragMoved = true;
-    window.electronAPI.moveWidgetHorizontal(dx);
   }
-});
+  
+  if ((dx !== 0 || dy !== 0) && window.electronAPI) {
+    if (window.electronAPI.moveWidget) {
+      window.electronAPI.moveWidget(dx, dy);
+    } else if (window.electronAPI.moveWidgetHorizontal) {
+      window.electronAPI.moveWidgetHorizontal(dx);
+    }
+  }
+}
 
-window.addEventListener('mouseup', () => {
+function endDrag(e) {
   if (isDragging) {
+    if (dragHandle.releasePointerCapture && e && e.pointerId !== undefined) {
+      try {
+        dragHandle.releasePointerCapture(e.pointerId);
+      } catch (_) {}
+    }
     const wasClick = !dragMoved;
     log(wasClick ? 'advanced controls toggled' : 'drag end');
     isDragging = false;
@@ -94,12 +116,24 @@ window.addEventListener('mouseup', () => {
       setAdvancedControlsVisible(!advancedControlsVisible);
     }
   }
-});
+}
+
+dragHandle.addEventListener('pointerdown', startDrag);
+dragHandle.addEventListener('pointermove', handleDragMove);
+dragHandle.addEventListener('pointerup', endDrag);
+dragHandle.addEventListener('pointercancel', endDrag);
+
+// Window fallbacks
+window.addEventListener('mousemove', handleDragMove);
+window.addEventListener('mouseup', endDrag);
 
 // Single Screenshot Trigger
 singleBtn.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
+  if (inlineConfig && !inlineConfig.classList.contains('hidden')) {
+    setConfigOpen(false);
+  }
   log(`Single Screenshot button clicked (target=${targetDisplay})`);
   if (window.electronAPI && window.electronAPI.startCapture) {
     window.electronAPI.startCapture(getSelectedTargetDisplayParam());
@@ -111,6 +145,9 @@ if (markerBtn) {
   markerBtn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
+    if (inlineConfig && !inlineConfig.classList.contains('hidden')) {
+      setConfigOpen(false);
+    }
     log(`Marker button clicked (target=${targetDisplay})`);
     if (window.electronAPI && window.electronAPI.startMarker) {
       window.electronAPI.startMarker(getSelectedTargetDisplayParam());

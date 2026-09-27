@@ -26,6 +26,7 @@
 
   window.electronAPI = {
     logMessage: (msg) => safeInvoke('log_message', { msg }),
+    moveWidget: (dx, dy) => safeInvoke('move_widget', { dx, dy }),
     moveWidgetHorizontal: (dx) => safeInvoke('move_widget_horizontal', { dx }),
     quitApp: () => safeInvoke('quit_app'),
     getDisplays: () => safeInvoke('get_displays'),

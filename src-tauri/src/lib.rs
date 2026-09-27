@@ -127,11 +127,33 @@ fn kill_existing_instances() {
 #[cfg(not(target_os = "windows"))]
 fn kill_existing_instances() {}
 
+#[cfg(target_os = "windows")]
+fn exclude_window_from_capture(window: &tauri::WebviewWindow) {
+    #[link(name = "user32")]
+    extern "system" {
+        fn SetWindowDisplayAffinity(hWnd: *mut std::ffi::c_void, dwAffinity: u32) -> i32;
+    }
+
+    const WDA_EXCLUDEFROMCAPTURE: u32 = 0x00000011;
+
+    if let Ok(hwnd) = window.hwnd() {
+        unsafe {
+            let handle = hwnd.0 as *mut std::ffi::c_void;
+            let res = SetWindowDisplayAffinity(handle, WDA_EXCLUDEFROMCAPTURE);
+            log_file(&format!("SetWindowDisplayAffinity result: {}", res));
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn exclude_window_from_capture(_window: &tauri::WebviewWindow) {}
+
+
 const COMPACT_WIDGET_WIDTH: f64 = 196.0;
 const EXPANDED_WIDGET_WIDTH: f64 = 278.0;
 const SETTINGS_WIDGET_WIDTH: f64 = 300.0;
 const WIDGET_HEIGHT: f64 = 44.0;
-const SETTINGS_WIDGET_HEIGHT: f64 = 220.0;
+const SETTINGS_WIDGET_HEIGHT: f64 = 240.0;
 
 fn resize_widget(main_win: &tauri::WebviewWindow, width: f64, height: f64) {
     let scale_factor = main_win.scale_factor().unwrap_or(1.0);
@@ -143,10 +165,42 @@ fn resize_widget(main_win: &tauri::WebviewWindow, width: f64, height: f64) {
         .outer_position()
         .map(|position| position.x as f64 / scale_factor)
         .unwrap_or(0.0);
+    let current_y = main_win
+        .outer_position()
+        .map(|position| position.y as f64 / scale_factor)
+        .unwrap_or(32.0);
+
     let centered_x = current_x + (old_width - width) / 2.0;
 
+    let monitors = main_win.available_monitors().unwrap_or_default();
+    let (clamped_x, clamped_y) = if !monitors.is_empty() {
+        let mut min_logical_x = f64::MAX;
+        let mut max_logical_x = f64::MIN;
+        let mut min_logical_y = f64::MAX;
+        let mut max_logical_y = f64::MIN;
+        for m in &monitors {
+            let sf = m.scale_factor();
+            let m_pos = m.position();
+            let m_size = m.size();
+            let left = m_pos.x as f64 / sf;
+            let right = (m_pos.x + m_size.width as i32) as f64 / sf;
+            let top = m_pos.y as f64 / sf;
+            let bottom = (m_pos.y + m_size.height as i32) as f64 / sf;
+            min_logical_x = min_logical_x.min(left);
+            max_logical_x = max_logical_x.max(right);
+            min_logical_y = min_logical_y.min(top);
+            max_logical_y = max_logical_y.max(bottom);
+        }
+        (
+            centered_x.max(min_logical_x).min(max_logical_x - width),
+            current_y.max(min_logical_y).min(max_logical_y - height),
+        )
+    } else {
+        (centered_x, current_y.max(0.0))
+    };
+
     let _ = main_win.set_size(tauri::Size::Logical(tauri::LogicalSize::new(width, height)));
-    let _ = main_win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(centered_x, 0.0)));
+    let _ = main_win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(clamped_x, clamped_y)));
 }
 
 // Custom Commands
@@ -195,16 +249,24 @@ fn quit_app() {
 #[tauri::command]
 async fn start_capture(app: AppHandle, target_display: Option<i32>) {
     log_file(&format!("start_capture called with target_display: {:?}", target_display));
-    if let Err(e) = capture_screen_and_open_overlay(app, "screenshot", None, target_display).await {
+    if let Err(e) = capture_screen_and_open_overlay(app.clone(), "screenshot", None, target_display).await {
         log_file(&format!("Capture failed: {}", e));
+        if let Some(main_win) = app.get_webview_window("main") {
+            let _ = main_win.show();
+            let _ = main_win.set_focus();
+        }
     }
 }
 
 #[tauri::command]
 async fn start_marker(app: AppHandle, target_display: Option<i32>) {
     log_file(&format!("start_marker called with target_display: {:?}", target_display));
-    if let Err(e) = capture_screen_and_open_overlay(app, "marker", None, target_display).await {
+    if let Err(e) = capture_screen_and_open_overlay(app.clone(), "marker", None, target_display).await {
         log_file(&format!("Marker failed: {}", e));
+        if let Some(main_win) = app.get_webview_window("main") {
+            let _ = main_win.show();
+            let _ = main_win.set_focus();
+        }
     }
 }
 
@@ -212,7 +274,7 @@ async fn start_marker(app: AppHandle, target_display: Option<i32>) {
 async fn switch_overlay_display(app: AppHandle, display_idx: i32, mode: Option<String>) {
     let mode_str = mode.unwrap_or_else(|| "screenshot".to_string());
     log_file(&format!("switch_overlay_display called with display_idx: {}", display_idx));
-    if let Err(e) = capture_screen_and_open_overlay(app, &mode_str, None, Some(display_idx)).await {
+    if let Err(e) = capture_screen_and_open_overlay(app.clone(), &mode_str, None, Some(display_idx)).await {
         log_file(&format!("Switch overlay display failed: {}", e));
     }
 }
@@ -222,8 +284,12 @@ async fn start_burst_capture(app: AppHandle, count: u32, interval_ms: u64, targe
     let count = count.clamp(2, 60);
     let interval_ms = interval_ms.clamp(100, 5_000);
     log_file(&format!("start_burst_capture called: {} frames, {} ms interval, target_display: {:?}", count, interval_ms, target_display));
-    if let Err(error) = capture_screen_and_open_overlay(app, "frame-selection", Some((count, interval_ms)), target_display).await {
+    if let Err(error) = capture_screen_and_open_overlay(app.clone(), "frame-selection", Some((count, interval_ms)), target_display).await {
         log_file(&format!("Unable to open frame selection: {}", error));
+        if let Some(main_win) = app.get_webview_window("main") {
+            let _ = main_win.show();
+            let _ = main_win.set_focus();
+        }
     }
 }
 
@@ -245,8 +311,13 @@ async fn capture_region_frames(
     ));
 
     if let Some(overlay_win) = app.get_webview_window("overlay") {
-        overlay_win.hide().map_err(|error| error.to_string())?;
+        let _ = overlay_win.hide();
     }
+    if let Some(main_win) = app.get_webview_window("main") {
+        let _ = main_win.hide();
+    }
+
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
     let result = capture_region_frames_to_clipboard(x, y, width, height, count, interval_ms).await;
 
@@ -299,36 +370,54 @@ fn set_widget_expanded(app: AppHandle, expanded: bool) {
 }
 
 #[tauri::command]
-fn move_widget_horizontal(app: AppHandle, dx: f64) {
-    log_file(&format!("move_widget_horizontal called: dx={}", dx));
+fn move_widget(app: AppHandle, dx: f64, dy: f64) {
     if let Some(main_win) = app.get_webview_window("main") {
         if let Ok(pos) = main_win.outer_position() {
             let scale_factor = main_win.scale_factor().unwrap_or(1.0);
             let current_x = pos.x as f64 / scale_factor;
+            let current_y = pos.y as f64 / scale_factor;
             let new_x = current_x + dx;
+            let new_y = current_y + dy;
 
             let monitors = main_win.available_monitors().unwrap_or_default();
-            let clamped_x = if !monitors.is_empty() {
+            let (clamped_x, clamped_y) = if !monitors.is_empty() {
                 let mut min_logical_x = f64::MAX;
                 let mut max_logical_x = f64::MIN;
+                let mut min_logical_y = f64::MAX;
+                let mut max_logical_y = f64::MIN;
                 for m in &monitors {
                     let sf = m.scale_factor();
                     let m_pos = m.position();
                     let m_size = m.size();
                     let left = m_pos.x as f64 / sf;
                     let right = (m_pos.x + m_size.width as i32) as f64 / sf;
+                    let top = m_pos.y as f64 / sf;
+                    let bottom = (m_pos.y + m_size.height as i32) as f64 / sf;
                     min_logical_x = min_logical_x.min(left);
                     max_logical_x = max_logical_x.max(right);
+                    min_logical_y = min_logical_y.min(top);
+                    max_logical_y = max_logical_y.max(bottom);
                 }
-                let widget_width = main_win.outer_size().map(|s| s.width as f64 / scale_factor).unwrap_or(260.0);
-                new_x.max(min_logical_x).min(max_logical_x - widget_width)
+                let widget_size = main_win
+                    .outer_size()
+                    .map(|s| (s.width as f64 / scale_factor, s.height as f64 / scale_factor))
+                    .unwrap_or((COMPACT_WIDGET_WIDTH, WIDGET_HEIGHT));
+                (
+                    new_x.max(min_logical_x).min(max_logical_x - widget_size.0),
+                    new_y.max(min_logical_y).min(max_logical_y - widget_size.1),
+                )
             } else {
-                new_x
+                (new_x, new_y.max(0.0))
             };
 
-            let _ = main_win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(clamped_x, 0.0)));
+            let _ = main_win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(clamped_x, clamped_y)));
         }
     }
+}
+
+#[tauri::command]
+fn move_widget_horizontal(app: AppHandle, dx: f64) {
+    move_widget(app, dx, 0.0);
 }
 
 #[tauri::command]
@@ -463,12 +552,16 @@ async fn capture_screen_and_open_overlay(
     frame_capture: Option<(u32, u64)>,
     target_display: Option<i32>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Hide both widget window and overlay window so neither is visible in the captured screen
     if let Some(main_win) = app.get_webview_window("main") {
-        main_win.hide()?;
+        let _ = main_win.hide();
+    }
+    if let Some(overlay_win) = app.get_webview_window("overlay") {
+        let _ = overlay_win.hide();
     }
 
-    // Short delay to let the OS hide the widget window
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    // Give the OS window manager and DWM compositor time to complete the window removal
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
     let screens = Screen::all().unwrap_or_default();
     if screens.is_empty() {
@@ -577,6 +670,7 @@ async fn capture_screen_and_open_overlay(
     };
 
     if let Some(overlay_win) = app.get_webview_window("overlay") {
+        exclude_window_from_capture(&overlay_win);
         let _ = overlay_win.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(win_x, win_y)));
         let _ = overlay_win.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(win_w, win_h)));
 
@@ -713,15 +807,23 @@ pub fn run() {
                 if is_screenshot_shortcut {
                     let app_handle = app.clone();
                     tauri::async_runtime::spawn(async move {
-                        if let Err(e) = capture_screen_and_open_overlay(app_handle, "screenshot", None, None).await {
+                        if let Err(e) = capture_screen_and_open_overlay(app_handle.clone(), "screenshot", None, None).await {
                             eprintln!("Shortcut capture failed: {}", e);
+                            if let Some(main_win) = app_handle.get_webview_window("main") {
+                                let _ = main_win.show();
+                                let _ = main_win.set_focus();
+                            }
                         }
                     });
                 } else if is_marker_shortcut {
                     let app_handle = app.clone();
                     tauri::async_runtime::spawn(async move {
-                        if let Err(e) = capture_screen_and_open_overlay(app_handle, "marker", None, None).await {
+                        if let Err(e) = capture_screen_and_open_overlay(app_handle.clone(), "marker", None, None).await {
                             eprintln!("Shortcut marker failed: {}", e);
+                            if let Some(main_win) = app_handle.get_webview_window("main") {
+                                let _ = main_win.show();
+                                let _ = main_win.set_focus();
+                            }
                         }
                     });
                 }
@@ -742,6 +844,7 @@ pub fn run() {
             capture_region_frames,
             set_widget_config_open,
             set_widget_expanded,
+            move_widget,
             move_widget_horizontal,
             close_overlay,
             save_screenshot,
@@ -768,30 +871,23 @@ pub fn run() {
                 });
             } else {
                 if let Some(main_win) = app.get_webview_window("main") {
+                    exclude_window_from_capture(&main_win);
+
                     if let Ok(Some(monitor)) = main_win.primary_monitor() {
                         let size = monitor.size();
                         let scale_factor = monitor.scale_factor();
                         let screen_width = size.width as f64 / scale_factor;
                         let widget_width = COMPACT_WIDGET_WIDTH;
-                        let x = (screen_width - widget_width) / 2.0; // Center top
-                        let y = 0.0; // Pinned flush to top edge
+                        let x = (screen_width - widget_width) / 2.0; // Center horizontally
+                        let y = 32.0; // Floating comfortably below top edge
                         let _ = main_win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
                     }
 
-                    // Snap y to 0 whenever window is moved natively
-                    let main_clone = main_win.clone();
-                    main_win.on_window_event(move |event| {
-                        if let tauri::WindowEvent::Moved(pos) = event {
-                            let scale_factor = main_clone.scale_factor().unwrap_or(1.0);
-                            let y_logical = pos.y as f64 / scale_factor;
-                            if y_logical.abs() > 0.5 {
-                                let x_logical = pos.x as f64 / scale_factor;
-                                let _ = main_clone.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x_logical, 0.0)));
-                            }
-                        }
-                    });
-
                     let _ = main_win.show();
+                }
+
+                if let Some(overlay_win) = app.get_webview_window("overlay") {
+                    exclude_window_from_capture(&overlay_win);
                 }
 
                 let shortcut_print = Shortcut::new(None, Code::PrintScreen);

@@ -16,10 +16,12 @@
     "allow-capture-region-frames",
     "allow-set-widget-config-open",
     "allow-set-widget-expanded",
+    "allow-move-widget",
     "allow-move-widget-horizontal",
     "allow-close-overlay",
     "allow-save-screenshot",
     "allow-copy-screenshot",
-    "allow-search-image"
+    "allow-search-image",
+    "allow-switch-overlay-display"
   ]
 }

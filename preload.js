@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   dragWidget: (delta) => ipcRenderer.send('drag-widget', delta),
+  moveWidget: (dx, dy) => ipcRenderer.send('drag-widget', { dx, dy }),
+  moveWidgetHorizontal: (dx) => ipcRenderer.send('drag-widget', { dx, dy: 0 }),
   startCapture: () => ipcRenderer.send('start-capture'),
   startMarker: () => ipcRenderer.send('start-marker'),
   closeOverlay: () => ipcRenderer.send('close-overlay'),

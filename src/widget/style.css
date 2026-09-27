@@ -10,18 +10,16 @@ body {
   pointer-events: none;
 }
 
-.notch-container {
+.notch-container,
+.widget-container {
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
   height: 44px;
   background: #0f1117;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
-  border-left: 1px solid rgba(255, 255, 255, 0.15);
-  border-right: 1px solid rgba(255, 255, 255, 0.15);
-  border-bottom-left-radius: 16px;
-  border-bottom-right-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
   padding: 0 8px 0 6px;
   box-sizing: border-box;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
@@ -29,7 +27,8 @@ body {
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
-.notch-container:hover {
+.notch-container:hover,
+.widget-container:hover {
   border-color: rgba(139, 92, 246, 0.4);
   box-shadow: 0 10px 28px rgba(124, 58, 237, 0.25),
               0 8px 24px rgba(0, 0, 0, 0.4);
@@ -41,13 +40,18 @@ body {
   justify-content: center;
   width: 18px;
   height: 32px;
-  cursor: ew-resize;
+  cursor: grab;
   color: rgba(255, 255, 255, 0.35);
   transition: color 0.2s ease;
+  touch-action: none;
 }
 
 .drag-handle:hover {
   color: rgba(255, 255, 255, 0.85);
+}
+
+.drag-handle:active {
+  cursor: grabbing;
 }
 
 .drag-handle.expanded {

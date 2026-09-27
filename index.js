@@ -56,6 +56,9 @@ function createWidgetWindow() {
   // Ensure it stays on top even over full screen windows
   widgetWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   widgetWin.setAlwaysOnTop(true, 'screen-saver');
+  if (typeof widgetWin.setContentProtection === 'function') {
+    widgetWin.setContentProtection(true);
+  }
 
   widgetWin.on('closed', () => {
     widgetWin = null;
@@ -64,9 +67,12 @@ function createWidgetWindow() {
 
 async function captureScreenAndOpenOverlay(mode = 'screenshot') {
   try {
-    // Hide the widget window first so it's not captured in the screenshot
+    // Hide widget and overlay windows first so neither is captured in the screenshot
     if (widgetWin && !widgetWin.isDestroyed()) {
       widgetWin.hide();
+    }
+    if (overlayWin && !overlayWin.isDestroyed()) {
+      overlayWin.hide();
     }
     
     // Give the OS window manager a brief moment to finish hiding the window
@@ -164,6 +170,9 @@ function createOverlayWindow(dataUrl, bounds, mode = 'screenshot', displayMeta =
   // Make it show on top of everything
   overlayWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   overlayWin.setAlwaysOnTop(true, 'screen-saver');
+  if (typeof overlayWin.setContentProtection === 'function') {
+    overlayWin.setContentProtection(true);
+  }
 
   overlayWin.webContents.once('did-finish-load', () => {
     overlayWin.webContents.send('screenshot-data', {
