@@ -48,7 +48,7 @@ const resizeHandles = {
 // Application State
 let selection = { x: 0, y: 0, w: 0, h: 0 };
 let hasSelection = false;
-let currentTool = 'select'; // select, pen, line, arrow, rect, highlight, text, eraser
+let currentTool = 'pen'; // pen default (select, pen, line, arrow, rect, highlight, text, eraser)
 let currentColor = '#ef4444'; // Red default
 let currentWidth = 2.5;
 let eraserWidth = 28;
@@ -156,9 +156,11 @@ function selectDisplayBounds(x, y, w, h) {
     h: Math.min(logicalHeight - y, h)
   };
   hasSelection = true;
-  currentTool = 'select';
-  document.querySelector('.tool-btn.active')?.classList.remove('active');
-  document.querySelector('.tool-btn[data-tool="select"]')?.classList.add('active');
+  if (frameCaptureSettings) {
+    setTool('select');
+  } else {
+    setTool('pen');
+  }
   startMarchingAnts();
   updateOverlays();
   draw();
@@ -189,15 +191,15 @@ window.electronAPI.onScreenshotData((data) => {
   if (isMarkerMode) {
     selection = { x: 0, y: 0, w: data.width, h: data.height };
     hasSelection = true;
-    currentTool = 'pen';
-    document.querySelector('.tool-btn.active')?.classList.remove('active');
-    document.querySelector('.tool-btn[data-tool="pen"]')?.classList.add('active');
+    setTool('pen');
   } else {
     selection = { x: 0, y: 0, w: 0, h: 0 };
     hasSelection = false;
-    currentTool = 'select';
-    document.querySelector('.tool-btn.active')?.classList.remove('active');
-    document.querySelector('.tool-btn[data-tool="select"]')?.classList.add('active');
+    if (frameCaptureSettings) {
+      setTool('select');
+    } else {
+      setTool('pen');
+    }
   }
 
   drawingActions = [];
@@ -324,10 +326,30 @@ function updateBrushCursor(x, y) {
     y = lastPointerPos.y;
   }
 
+  // When actively selecting a region or before selection is established, show crosshair
+  if (isSelecting || (!hasSelection && !isMarkerMode)) {
+    if (brushCursor) brushCursor.classList.add('hidden');
+    canvas.style.cursor = 'crosshair';
+    return;
+  }
+
   // If select or text tool is active, or cursor is offscreen, hide cursor ring
   if (!['pen', 'eraser', 'highlight', 'line', 'arrow', 'rect'].includes(currentTool) || x < 0 || y < 0) {
     if (brushCursor) brushCursor.classList.add('hidden');
-    canvas.style.cursor = currentTool === 'text' ? 'text' : 'crosshair';
+    if (currentTool === 'text') {
+      canvas.style.cursor = 'text';
+    } else if (currentTool === 'select') {
+      canvas.style.cursor = isInsideSelection(x, y) ? 'move' : 'crosshair';
+    } else {
+      canvas.style.cursor = 'crosshair';
+    }
+    return;
+  }
+
+  // If drawing tool is active but pointer is outside selection (in screenshot mode)
+  if (!isMarkerMode && !isInsideSelection(x, y)) {
+    if (brushCursor) brushCursor.classList.add('hidden');
+    canvas.style.cursor = 'default';
     return;
   }
 
@@ -862,11 +884,7 @@ function onPointerDown(e) {
     mouseStart = pos;
     selection = { x: pos.x, y: pos.y, w: 0, h: 0 };
     hasSelection = true;
-    currentTool = 'select'; // Reset tool to select during creation
     setActiveDisplayPill(null);
-    document.querySelector('.tool-btn.active')?.classList.remove('active');
-    document.querySelector('.tool-btn[data-tool="select"]')?.classList.add('active');
-    
     stopMarchingAnts();
     draw();
   } else {
@@ -982,7 +1000,7 @@ function onPointerMove(e) {
     updateOverlays();
   } else if (activeShape) {
     // We are currently drawing a shape
-    if (isInsideSelection(pos.x, pos.y)) {
+    if (isMarkerMode || isInsideSelection(pos.x, pos.y) || activeShape.points) {
       if (activeShape.type === 'pen' || activeShape.type === 'highlight' || activeShape.type === 'eraser') {
         activeShape.points.push(pos);
       } else {
@@ -998,10 +1016,19 @@ function onPointerUp() {
     isSelecting = false;
     if (selection.w > 5 && selection.h > 5) {
       hasSelection = true;
+      if (frameCaptureSettings) {
+        setTool('select');
+      } else {
+        setTool('pen');
+      }
       updateOverlays();
       startMarchingAnts();
     } else {
       hasSelection = false;
+      selection = { x: 0, y: 0, w: 0, h: 0 };
+      if (!frameCaptureSettings) {
+        setTool('pen');
+      }
       updateOverlays();
       draw();
     }
@@ -1302,6 +1329,8 @@ window.addEventListener('keydown', (e) => {
       setTool('line');
     } else if (k === 't') {
       setTool('text');
+    } else if (k === 'v' || k === 'm') {
+      setTool('select');
     } else if (e.key === '1') {
       setColor('#ef4444');
     } else if (e.key === '2') {
